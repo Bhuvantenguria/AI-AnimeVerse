@@ -1,0 +1,462 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid())
+  clerkId       String   @unique
+  email         String   @unique
+  username      String?  @unique
+  firstName     String?
+  lastName      String?
+  avatar        String?
+  bio           String?
+  level         Int      @default(1)
+  xp            Int      @default(0)
+  rank          Int?
+  isVerified    Boolean  @default(false)
+  isPremium     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  watchlist         Watchlist[]
+  readingList       ReadingList[]
+  progress          Progress[]
+  quizAnswers       QuizAnswer[]
+  posts             Post[]
+  comments          Comment[]
+  likes             Like[]
+  notifications     Notification[]
+  achievements      UserAchievement[]
+  chatSessions      ChatSession[]
+  subscription      Subscription?
+  narrationRequests NarrationRequest[]
+  previewRequests   PreviewRequest[]
+
+  @@map("users")
+}
+
+model Anime {
+  id          String   @id @default(uuid())
+  title       String
+  titleJp     String?
+  synopsis    String
+  episodes    Int
+  status      String   // ongoing, completed, upcoming
+  rating      Float?
+  year        Int
+  season      String?  // spring, summer, fall, winter
+  genres      String[] // Array of genre strings
+  studios     String[] // Array of studio names
+  coverImage  String?
+  bannerImage String?
+  trailer     String?
+  malId       Int?     @unique // MyAnimeList ID
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  watchlist   Watchlist[]
+  progress    Progress[]
+  characters  Character[]
+  episodes_   Episode[]
+  quizzes     Quiz[]
+
+  @@map("anime")
+}
+
+model Manga {
+  id          String   @id @default(uuid())
+  title       String
+  titleJp     String?
+  synopsis    String
+  chapters    Int
+  volumes     Int?
+  status      String   // ongoing, completed, hiatus
+  rating      Float?
+  year        Int
+  genres      String[]
+  authors     String[]
+  coverImage  String?
+  bannerImage String?
+  malId       Int?     @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  readingList       ReadingList[]
+  progress          Progress[]
+  characters        Character[]
+  chapters_         Chapter[]
+  quizzes           Quiz[]
+  narrationRequests NarrationRequest[]
+  previewRequests   PreviewRequest[]
+
+  @@map("manga")
+}
+
+model Character {
+  id          String  @id @default(uuid())
+  name        String
+  nameJp      String?
+  description String?
+  avatar      String?
+  personality String[]
+  voiceActor  String?
+  animeId     String?
+  mangaId     String?
+
+  // Relations
+  anime        Anime?        @relation(fields: [animeId], references: [id])
+  manga        Manga?        @relation(fields: [mangaId], references: [id])
+  chatSessions ChatSession[]
+
+  @@map("characters")
+}
+
+model Episode {
+  id          String   @id @default(uuid())
+  number      Int
+  title       String
+  synopsis    String?
+  duration    Int?     // in minutes
+  airDate     DateTime?
+  thumbnail   String?
+  videoUrl    String?
+  animeId     String
+  createdAt   DateTime @default(now())
+
+  // Relations
+  anime Anime @relation(fields: [animeId], references: [id], onDelete: Cascade)
+
+  @@unique([animeId, number])
+  @@map("episodes")
+}
+
+model Chapter {
+  id        String   @id @default(uuid())
+  number    Float    // Allow decimal chapters like 1.5
+  title     String?
+  pages     Int
+  releaseDate DateTime?
+  mangaId   String
+  createdAt DateTime @default(now())
+
+  // Relations
+  manga             Manga               @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+  narrationRequests NarrationRequest[]
+
+  @@unique([mangaId, number])
+  @@map("chapters")
+}
+
+model Watchlist {
+  id        String   @id @default(uuid())
+  userId    String
+  animeId   String
+  status    String   @default("watching") // watching, completed, on_hold, dropped, plan_to_watch
+  rating    Int?     // 1-10
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  anime Anime @relation(fields: [animeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, animeId])
+  @@map("watchlist")
+}
+
+model ReadingList {
+  id        String   @id @default(uuid())
+  userId    String
+  mangaId   String
+  status    String   @default("reading") // reading, completed, on_hold, dropped, plan_to_read
+  rating    Int?     // 1-10
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  manga Manga @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, mangaId])
+  @@map("reading_list")
+}
+
+model Progress {
+  id              String   @id @default(uuid())
+  userId          String
+  animeId         String?
+  mangaId         String?
+  currentEpisode  Int?
+  currentChapter  Float?
+  currentPage     Int?
+  totalEpisodes   Int?
+  totalChapters   Int?
+  progressPercent Float    @default(0)
+  lastWatched     DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  anime Anime? @relation(fields: [animeId], references: [id], onDelete: Cascade)
+  manga Manga? @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, animeId])
+  @@unique([userId, mangaId])
+  @@map("progress")
+}
+
+model Quiz {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  animeId     String?
+  mangaId     String?
+  difficulty  String   @default("medium") // easy, medium, hard
+  timeLimit   Int?     // in seconds
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  anime     Anime?        @relation(fields: [animeId], references: [id])
+  manga     Manga?        @relation(fields: [mangaId], references: [id])
+  questions QuizQuestion[]
+  answers   QuizAnswer[]
+
+  @@map("quizzes")
+}
+
+model QuizQuestion {
+  id            String   @id @default(uuid())
+  quizId        String
+  question      String
+  options       String[] // Array of options
+  correctAnswer Int      // Index of correct answer
+  explanation   String?
+  points        Int      @default(10)
+  order         Int
+  createdAt     DateTime @default(now())
+
+  // Relations
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@map("quiz_questions")
+}
+
+model QuizAnswer {
+  id           String   @id @default(uuid())
+  userId       String
+  quizId       String
+  answers      Json     // Array of user's answers
+  score        Int
+  totalPoints  Int
+  timeSpent    Int      // in seconds
+  completedAt  DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, quizId])
+  @@map("quiz_answers")
+}
+
+model Post {
+  id        String   @id @default(uuid())
+  title     String
+  content   String
+  tags      String[]
+  images    String[]
+  likes     Int      @default(0)
+  views     Int      @default(0)
+  isHot     Boolean  @default(false)
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comments Comment[]
+  likes_   Like[]
+
+  @@map("posts")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  content   String
+  likes     Int      @default(0)
+  userId    String
+  postId    String
+  parentId  String?  // For nested comments
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post     Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  Comment[] @relation("CommentReplies")
+  likes_   Like[]
+
+  @@map("comments")
+}
+
+model Like {
+  id        String   @id @default(uuid())
+  userId    String
+  postId    String?
+  commentId String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post    Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  comment Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@unique([userId, commentId])
+  @@map("likes")
+}
+
+model Achievement {
+  id          String @id @default(uuid())
+  name        String @unique
+  description String
+  icon        String
+  category    String // quiz, reading, watching, community
+  condition   Json   // Condition for unlocking
+  points      Int    @default(0)
+  rarity      String @default("common") // common, rare, epic, legendary
+
+  // Relations
+  users UserAchievement[]
+
+  @@map("achievements")
+}
+
+model UserAchievement {
+  id            String   @id @default(uuid())
+  userId        String
+  achievementId String
+  unlockedAt    DateTime @default(now())
+
+  // Relations
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@map("user_achievements")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      String   // achievement, quiz, community, system
+  data      Json?    // Additional data
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model ChatSession {
+  id          String   @id @default(uuid())
+  userId      String
+  characterId String
+  context     Json     // Conversation history
+  lastMessage DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  // Relations
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, characterId])
+  @@map("chat_sessions")
+}
+
+model Subscription {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  plan            String   // free, premium, premium_plus
+  status          String   // active, canceled, expired
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean @default(false)
+  stripeCustomerId   String?
+  stripeSubscriptionId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model NarrationRequest {
+  id        String   @id @default(uuid())
+  userId    String
+  mangaId   String
+  chapterId String?
+  voiceType String   // character voice or narrator
+  status    String   @default("pending") // pending, processing, completed, failed
+  audioUrl  String?
+  jobId     String?  // Background job ID
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  manga   Manga    @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+  chapter Chapter? @relation(fields: [chapterId], references: [id])
+
+  @@map("narration_requests")
+}
+
+model PreviewRequest {
+  id        String   @id @default(uuid())
+  userId    String
+  mangaId   String
+  voiceType String
+  style     String   // animation style
+  status    String   @default("pending") // pending, processing, completed, failed
+  videoUrl  String?
+  jobId     String?  // Background job ID
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  manga Manga @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+
+  @@map("preview_requests")
+}
+
+model KnowledgeBase {
+  id          String   @id @default(uuid())
+  animeId     String?
+  mangaId     String?
+  characterId String?
+  content     String
+  embedding   Unsupported("vector(1536)")? // For vector similarity search
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@map("knowledge_base")
+}
