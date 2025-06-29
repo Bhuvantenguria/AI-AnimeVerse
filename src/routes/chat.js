@@ -1,4 +1,5 @@
-import { getAuth } from "@clerk/fastify"
+import pkg from '@clerk/fastify';
+const { getAuth } = pkg;
 
 export default async function chatRoutes(fastify, options) {
   // Start chat session with character

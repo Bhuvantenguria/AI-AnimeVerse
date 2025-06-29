@@ -1,4 +1,5 @@
-import { getAuth } from "@clerk/fastify"
+import pkg from '@clerk/fastify';
+const { getAuth } = pkg;
 
 export default async function mangaRoutes(fastify, options) {
   // Get all manga with pagination and filters

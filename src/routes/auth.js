@@ -1,4 +1,5 @@
-import { getAuth } from "@clerk/fastify"
+import pkg from '@clerk/fastify';
+const { getAuth } = pkg;
 
 export default async function authRoutes(fastify, options) {
   // Webhook to sync user data from Clerk
