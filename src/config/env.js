@@ -26,6 +26,7 @@ export const envSchema = {
     },
     REDIS_URL: {
       type: "string",
+      default: "redis://default:AZ01AAIjcDFmZGM0NGEyOWZmZDg0NTZjODYyMDExZmY2MWQ0MTBjOHAxMA@selected-jennet-40245.upstash.io:6379",
     },
     CLERK_SECRET_KEY: {
       type: "string",
