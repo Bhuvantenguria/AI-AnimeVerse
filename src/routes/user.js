@@ -1,5 +1,4 @@
-import pkg from '@clerk/fastify';
-const { getAuth } = pkg;
+import { getAuth } from "@clerk/fastify"
 
 export default async function userRoutes(fastify, options) {
   // Get current user profile

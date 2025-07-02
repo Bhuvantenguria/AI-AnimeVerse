@@ -1,108 +1,70 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useRef, useCallback } from "react"
 import { motion } from "framer-motion"
-import { Star, Play, Plus, Check, Eye, Calendar, Users } from "lucide-react"
+import { Star, Play, Plus, Check, Eye, Calendar } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
-import api from "@/lib/api"
+import { useRouter } from "next/navigation"
 
 interface Anime {
   id: string
   title: string
   coverImage: string
   bannerImage?: string
-  rating: number
-  episodes: number
+  rating: number | null
+  episodes: number | null
   status: string
-  year: number
+  year: number | null
   genres: string[]
-  synopsis: string
-  studios: string[]
+  synopsis: string | null
+  studios?: string[]
   isInWatchlist?: boolean
   watchlistStatus?: string
 }
 
 interface EnhancedAnimeGridProps {
-  searchQuery?: string
-  selectedGenre?: string
-  selectedStatus?: string
-  selectedYear?: number
+  anime: Anime[]
+  loading: boolean
+  hasMore: boolean
+  onLoadMore: () => void
 }
 
-export function EnhancedAnimeGrid({
-  searchQuery,
-  selectedGenre,
-  selectedStatus,
-  selectedYear,
-}: EnhancedAnimeGridProps) {
-  const [anime, setAnime] = useState<Anime[]>([])
-  const [loading, setLoading] = useState(true)
-  const [page, setPage] = useState(1)
-  const [hasMore, setHasMore] = useState(true)
+export function EnhancedAnimeGrid({ anime, loading, hasMore, onLoadMore }: EnhancedAnimeGridProps) {
   const { toast } = useToast()
+  const router = useRouter()
+  const observer = useRef<IntersectionObserver>()
 
-  useEffect(() => {
-    loadAnime(true)
-  }, [searchQuery, selectedGenre, selectedStatus, selectedYear])
-
-  const loadAnime = async (reset = false) => {
-    try {
-      setLoading(true)
-      const currentPage = reset ? 1 : page
-
-      const response = await api.getAnime({
-        page: currentPage,
-        limit: 20,
-        search: searchQuery,
-        genre: selectedGenre,
-        status: selectedStatus,
-        year: selectedYear,
+  const lastAnimeElementRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (loading) return
+      if (observer.current) observer.current.disconnect()
+      observer.current = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && hasMore) {
+          onLoadMore()
+        }
       })
+      if (node) observer.current.observe(node)
+    },
+    [loading, hasMore, onLoadMore]
+  )
 
-      if (reset) {
-        setAnime(response.anime)
-        setPage(2)
-      } else {
-        setAnime((prev) => [...prev, ...response.anime])
-        setPage((prev) => prev + 1)
-      }
-
-      setHasMore(response.pagination.page < response.pagination.pages)
-    } catch (error) {
-      console.error("Failed to load anime:", error)
-      toast({
-        title: "Error",
-        description: "Failed to load anime. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
-    }
+  const handleWatch = (animeId: string) => {
+    router.push(`/anime/${animeId}`)
   }
 
   const toggleWatchlist = async (animeItem: Anime) => {
     try {
       if (animeItem.isInWatchlist) {
-        await api.removeFromWatchlist(animeItem.id)
-        setAnime((prev) =>
-          prev.map((item) =>
-            item.id === animeItem.id ? { ...item, isInWatchlist: false, watchlistStatus: undefined } : item,
-          ),
-        )
+        // await api.removeFromWatchlist(animeItem.id)
         toast({
           title: "Removed from Watchlist",
           description: `${animeItem.title} has been removed from your watchlist.`,
         })
       } else {
-        await api.addToWatchlist(animeItem.id, "plan_to_watch")
-        setAnime((prev) =>
-          prev.map((item) =>
-            item.id === animeItem.id ? { ...item, isInWatchlist: true, watchlistStatus: "plan_to_watch" } : item,
-          ),
-        )
+        // await api.addToWatchlist(animeItem.id)
         toast({
           title: "Added to Watchlist",
           description: `${animeItem.title} has been added to your watchlist.`,
@@ -132,23 +94,6 @@ export function EnhancedAnimeGrid({
     }
   }
 
-  const getWatchlistStatusColor = (status?: string) => {
-    switch (status) {
-      case "watching":
-        return "bg-green-500"
-      case "completed":
-        return "bg-blue-500"
-      case "on_hold":
-        return "bg-yellow-500"
-      case "dropped":
-        return "bg-red-500"
-      case "plan_to_watch":
-        return "bg-purple-500"
-      default:
-        return "bg-gray-500"
-    }
-  }
-
   return (
     <div className="space-y-6">
       {/* Anime Grid */}
@@ -156,6 +101,7 @@ export function EnhancedAnimeGrid({
         {anime.map((animeItem, index) => (
           <motion.div
             key={animeItem.id}
+            ref={index === anime.length - 1 ? lastAnimeElementRef : null}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
@@ -163,7 +109,10 @@ export function EnhancedAnimeGrid({
             <Card className="group overflow-hidden bg-gradient-to-br from-gray-900 to-gray-800 border-gray-700 hover:border-purple-500/50 transition-all duration-300">
               <div className="relative">
                 {/* Cover Image */}
-                <div className="aspect-[3/4] overflow-hidden">
+                <div 
+                  className="aspect-[3/4] overflow-hidden cursor-pointer" 
+                  onClick={() => handleWatch(animeItem.id)}
+                >
                   <img
                     src={animeItem.coverImage || "/placeholder.svg?height=400&width=300"}
                     alt={animeItem.title}
@@ -176,14 +125,24 @@ export function EnhancedAnimeGrid({
                   {/* Action Buttons */}
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                     <div className="flex space-x-2">
-                      <Button size="sm" className="bg-purple-600 hover:bg-purple-700">
+                      <Button 
+                        size="sm" 
+                        className="bg-purple-600 hover:bg-purple-700"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleWatch(animeItem.id)
+                        }}
+                      >
                         <Play className="w-4 h-4 mr-1" />
                         Watch
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => toggleWatchlist(animeItem)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleWatchlist(animeItem)
+                        }}
                         className={`${
                           animeItem.isInWatchlist
                             ? "bg-green-600 hover:bg-green-700 text-white"
@@ -201,104 +160,69 @@ export function EnhancedAnimeGrid({
                   {animeItem.status}
                 </Badge>
 
-                {/* Rating */}
+                {/* Rating Badge */}
                 {animeItem.rating && (
-                  <div className="absolute top-2 right-2 bg-black/70 rounded-full px-2 py-1 flex items-center space-x-1">
-                    <Star className="w-3 h-3 text-yellow-400 fill-current" />
-                    <span className="text-xs text-white font-medium">{animeItem.rating.toFixed(1)}</span>
-                  </div>
-                )}
-
-                {/* Watchlist Status */}
-                {animeItem.isInWatchlist && animeItem.watchlistStatus && (
-                  <Badge
-                    className={`absolute bottom-2 left-2 ${getWatchlistStatusColor(animeItem.watchlistStatus)} text-white text-xs`}
-                  >
-                    {animeItem.watchlistStatus.replace("_", " ")}
+                  <Badge className="absolute top-2 right-2 bg-yellow-500 text-white">
+                    <Star className="w-3 h-3 mr-1" />
+                    {animeItem.rating.toFixed(1)}
                   </Badge>
                 )}
               </div>
 
-              <CardContent className="p-4">
-                <h3 className="font-semibold text-white mb-2 line-clamp-2 group-hover:text-purple-300 transition-colors">
-                  {animeItem.title}
-                </h3>
+              <CardContent 
+                className="p-4 cursor-pointer" 
+                onClick={() => handleWatch(animeItem.id)}
+              >
+                {/* Title */}
+                <h3 className="text-lg font-semibold text-white mb-2 line-clamp-2">{animeItem.title}</h3>
 
-                <div className="flex items-center space-x-4 text-sm text-gray-400 mb-3">
-                  <div className="flex items-center space-x-1">
-                    <Eye className="w-3 h-3" />
-                    <span>{animeItem.episodes} eps</span>
+                {/* Metadata */}
+                <div className="flex items-center space-x-4 text-sm text-gray-400 mb-2">
+                  {animeItem.episodes && (
+                    <div className="flex items-center">
+                      <Eye className="w-4 h-4 mr-1" />
+                      {animeItem.episodes} eps
                   </div>
-                  <div className="flex items-center space-x-1">
-                    <Calendar className="w-3 h-3" />
-                    <span>{animeItem.year}</span>
-                  </div>
-                  {animeItem.studios.length > 0 && (
-                    <div className="flex items-center space-x-1">
-                      <Users className="w-3 h-3" />
-                      <span className="truncate">{animeItem.studios[0]}</span>
+                  )}
+                  {animeItem.year && (
+                    <div className="flex items-center">
+                      <Calendar className="w-4 h-4 mr-1" />
+                      {animeItem.year}
                     </div>
                   )}
                 </div>
 
                 {/* Genres */}
-                <div className="flex flex-wrap gap-1 mb-3">
-                  {animeItem.genres.slice(0, 3).map((genre) => (
-                    <Badge
-                      key={genre}
-                      variant="secondary"
-                      className="text-xs bg-purple-500/20 text-purple-300 hover:bg-purple-500/30"
-                    >
+                <div className="flex flex-wrap gap-1">
+                  {animeItem.genres?.slice(0, 3).map((genre) => (
+                    <Badge key={genre} variant="outline" className="text-xs">
                       {genre}
                     </Badge>
                   ))}
-                  {animeItem.genres.length > 3 && (
-                    <Badge variant="secondary" className="text-xs bg-gray-500/20 text-gray-400">
-                      +{animeItem.genres.length - 3}
-                    </Badge>
-                  )}
                 </div>
-
-                {/* Synopsis */}
-                <p className="text-sm text-gray-400 line-clamp-3">{animeItem.synopsis}</p>
               </CardContent>
             </Card>
           </motion.div>
         ))}
+
+        {/* Loading Skeletons */}
+        {loading &&
+          Array.from({ length: 8 }).map((_, index) => (
+            <div key={`skeleton-${index}`} className="animate-pulse">
+              <div className="bg-gray-800 rounded-lg overflow-hidden">
+                <div className="aspect-[3/4] bg-gray-700" />
+                <div className="p-4 space-y-3">
+                  <div className="h-4 bg-gray-700 rounded w-3/4" />
+                  <div className="h-3 bg-gray-700 rounded w-1/2" />
+                  <div className="flex gap-1">
+                    <div className="h-3 bg-gray-700 rounded w-16" />
+                    <div className="h-3 bg-gray-700 rounded w-16" />
       </div>
-
-      {/* Loading */}
-      {loading && (
-        <div className="flex justify-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500" />
         </div>
-      )}
-
-      {/* Load More */}
-      {!loading && hasMore && (
-        <div className="flex justify-center py-8">
-          <Button onClick={() => loadAnime()} className="bg-purple-600 hover:bg-purple-700">
-            Load More Anime
-          </Button>
         </div>
-      )}
-
-      {/* No Results */}
-      {!loading && anime.length === 0 && (
-        <div className="text-center py-12">
-          <div className="text-gray-400 mb-4">
-            <Eye className="w-12 h-12 mx-auto mb-2 opacity-50" />
-            <p>No anime found matching your criteria.</p>
           </div>
-          <Button
-            onClick={() => loadAnime(true)}
-            variant="outline"
-            className="border-purple-500 text-purple-400 hover:bg-purple-500/10"
-          >
-            Reset Filters
-          </Button>
+          ))}
         </div>
-      )}
     </div>
   )
 }

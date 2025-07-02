@@ -1,38 +1,87 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Play, Pause, Volume2, Download, Share2, RotateCcw, Maximize } from "lucide-react"
+import { Play, Pause, Volume2, Download, Share2, RotateCcw, Maximize, X, ChevronLeft, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface HolographicVideoPlayerProps {
   videoUrl: string
   title: string
-  onRegenerate: () => void
-  onDownload: () => void
-  onShare: () => void
+  headers?: Record<string, string>
+  onClose?: () => void
+  onRegenerate?: () => void
+  onDownload?: () => void
+  onShare?: () => void
+  onPrevious?: () => void
+  onNext?: () => void
 }
 
 export function HolographicVideoPlayer({
   videoUrl,
   title,
+  headers,
+  onClose,
   onRegenerate,
   onDownload,
   onShare,
+  onPrevious,
+  onNext,
 }: HolographicVideoPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [showControls, setShowControls] = useState(true)
   const [volume, setVolume] = useState(80)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState(0)
+  const [duration, setDuration] = useState(0)
   const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.load()
+      setIsLoading(true)
+      setError(null)
+      setProgress(0)
+      setDuration(0)
+      
+      if (headers && Object.keys(headers).length > 0) {
+        const mediaSource = new MediaSource()
+        videoRef.current.src = URL.createObjectURL(mediaSource)
+        
+        mediaSource.addEventListener('sourceopen', async () => {
+          try {
+            const response = await fetch(videoUrl, { headers })
+            if (!response.ok) throw new Error('Failed to fetch video')
+            
+            const sourceBuffer = mediaSource.addSourceBuffer('video/mp4; codecs="avc1.42E01E, mp4a.40.2"')
+            const data = await response.arrayBuffer()
+            sourceBuffer.addEventListener('updateend', () => {
+              if (!sourceBuffer.updating && mediaSource.readyState === 'open') {
+                mediaSource.endOfStream()
+              }
+            })
+            sourceBuffer.appendBuffer(data)
+          } catch (err) {
+            console.error('Error loading video:', err)
+            setError('Failed to load video with custom headers')
+            setIsLoading(false)
+          }
+        })
+      }
+    }
+  }, [videoUrl, headers])
 
   const togglePlay = () => {
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause()
       } else {
-        videoRef.current.play()
+        videoRef.current.play().catch(err => {
+          console.error("Failed to play video:", err)
+          setError("Failed to play video. Please try again.")
+        })
       }
       setIsPlaying(!isPlaying)
     }
@@ -46,9 +95,54 @@ export function HolographicVideoPlayer({
     }
   }
 
+  const handleTimeUpdate = () => {
+    if (videoRef.current) {
+      setProgress((videoRef.current.currentTime / videoRef.current.duration) * 100)
+    }
+  }
+
+  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (videoRef.current) {
+      const rect = e.currentTarget.getBoundingClientRect()
+      const pos = (e.clientX - rect.left) / rect.width
+      videoRef.current.currentTime = pos * videoRef.current.duration
+    }
+  }
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  const handleVideoError = () => {
+    setError("Failed to load video. Please try again.")
+    setIsLoading(false)
+  }
+
+  const handleVideoLoadedData = () => {
+    setIsLoading(false)
+    setError(null)
+    if (videoRef.current) {
+      setDuration(videoRef.current.duration)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="max-w-4xl w-full animate-scale-in">
+        {/* Close Button */}
+        {onClose && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            className="absolute top-4 right-4 text-white hover:bg-white/20 z-50"
+          >
+            <X className="h-6 w-6" />
+          </Button>
+        )}
+
         {/* Holographic Frame */}
         <div className="relative">
           {/* Outer Glow */}
@@ -61,11 +155,24 @@ export function HolographicVideoPlayer({
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-xl font-bold text-interactive">{title}</h3>
-                  <p className="text-sm text-muted-foreground">AI-Generated Anime Preview</p>
+                  <p className="text-sm text-muted-foreground">
+                    {isLoading ? "Loading..." : error ? "Error" : "Ready to Play"}
+                  </p>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
-                  <span className="text-sm text-green-500">Ready</span>
+                  <div 
+                    className={cn(
+                      "w-3 h-3 rounded-full",
+                      isLoading ? "bg-yellow-500" : error ? "bg-red-500" : "bg-green-500",
+                      "animate-pulse"
+                    )} 
+                  />
+                  <span className={cn(
+                    "text-sm",
+                    isLoading ? "text-yellow-500" : error ? "text-red-500" : "text-green-500"
+                  )}>
+                    {isLoading ? "Loading" : error ? "Error" : "Ready"}
+                  </span>
                 </div>
               </div>
             </div>
@@ -76,21 +183,55 @@ export function HolographicVideoPlayer({
               onMouseEnter={() => setShowControls(true)}
               onMouseLeave={() => setShowControls(false)}
             >
+              {/* Loading Overlay */}
+              {isLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                  <div className="w-16 h-16 border-4 border-t-primary animate-spin rounded-full" />
+                </div>
+              )}
+
+              {/* Error Overlay */}
+              {error && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                  <div className="text-center text-red-500">
+                    <p className="mb-4">{error}</p>
+                    <Button onClick={() => {
+                      if (videoRef.current) {
+                        videoRef.current.load()
+                        setIsLoading(true)
+                        setError(null)
+                      }
+                    }}>
+                      Retry
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* Video Element */}
               <video
                 ref={videoRef}
                 className="w-full h-full object-cover"
-                poster="/placeholder.svg?height=400&width=600"
+                poster="/placeholder.svg"
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
+                onLoadedData={handleVideoLoadedData}
+                onTimeUpdate={handleTimeUpdate}
+                onError={handleVideoError}
+                controls={false}
               >
-                <source src={videoUrl} type="video/mp4" />
+                {!headers && <source src={videoUrl} type="video/mp4" />}
+                Your browser does not support the video tag.
               </video>
 
               {/* Play Button Overlay */}
-              {!isPlaying && (
+              {!isPlaying && !isLoading && !error && (
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <Button size="lg" className="w-20 h-20 rounded-full animate-pulse-glow" onClick={togglePlay}>
+                  <Button 
+                    size="lg" 
+                    className="w-20 h-20 rounded-full animate-pulse-glow" 
+                    onClick={togglePlay}
+                  >
                     <Play className="h-8 w-8 ml-1" />
                   </Button>
                 </div>
@@ -105,13 +246,25 @@ export function HolographicVideoPlayer({
               >
                 <div className="flex items-center space-x-4">
                   {/* Play/Pause */}
-                  <Button variant="ghost" size="icon" onClick={togglePlay} className="text-white hover:bg-white/20">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={togglePlay} 
+                    className="text-white hover:bg-white/20"
+                    disabled={isLoading || !!error}
+                  >
                     {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
                   </Button>
 
                   {/* Progress Bar */}
-                  <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden">
-                    <div className="h-full bg-primary rounded-full w-1/3 transition-all duration-300" />
+                  <div 
+                    className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden cursor-pointer"
+                    onClick={handleProgressClick}
+                  >
+                    <div 
+                      className="h-full bg-primary rounded-full"
+                      style={{ width: `${progress}%` }}
+                    />
                   </div>
 
                   {/* Volume */}
@@ -127,8 +280,47 @@ export function HolographicVideoPlayer({
                     />
                   </div>
 
+                  {/* Time */}
+                  <div className="text-white text-sm">
+                    {videoRef.current && (
+                      <>
+                        {formatTime(videoRef.current.currentTime)} / {formatTime(duration)}
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  {/* Previous/Next Episode */}
+                  {onPrevious && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={onPrevious}
+                      className="text-white hover:bg-white/20"
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                    </Button>
+                  )}
+                  {onNext && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={onNext}
+                      className="text-white hover:bg-white/20"
+                    >
+                      <ChevronRight className="h-5 w-5" />
+                    </Button>
+                  )}
+
                   {/* Fullscreen */}
-                  <Button variant="ghost" size="icon" className="text-white hover:bg-white/20">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="text-white hover:bg-white/20"
+                    onClick={() => videoRef.current?.requestFullscreen()}
+                    disabled={isLoading || !!error}
+                  >
                     <Maximize className="h-4 w-4" />
                   </Button>
                 </div>

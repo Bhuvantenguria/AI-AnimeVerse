@@ -91,7 +91,7 @@ async function start() {
 
     // Start server
     const port = fastify.config.PORT || 3001
-    const host = fastify.config.HOST || "192.168.178.215"
+    const host = fastify.config.HOST || "0.0.0.0"
 
     await fastify.listen({ port, host })
     fastify.log.info(`🚀 Server running on http://${host}:${port}`)

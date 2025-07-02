@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { Star, BookOpen, Plus, Check, Eye, Calendar, User } from "lucide-react"
+import { Star, BookOpen, Plus, Check, Eye, Calendar, User, Book, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
@@ -10,19 +10,34 @@ import { useToast } from "@/hooks/use-toast"
 import api from "@/lib/api"
 
 interface Manga {
-  id: string
+  malId: string
   title: string
+  titleEnglish?: string
+  titleJapanese?: string
   coverImage: string
-  rating: number
-  chapters: number
-  volumes?: number
+  rating: number | null
+  chapters: number | null
+  volumes: number | null
   status: string
-  year: number
-  genres: string[]
-  synopsis: string
-  authors: string[]
+  year: number | null
+  genres: Array<{ id: number, name: string }>
+  synopsis: string | null
+  authors: Array<{ id: number, name: string }>
   isInReadingList?: boolean
   readingStatus?: string
+}
+
+interface MangaResponse {
+  data: Manga[]
+  pagination: {
+    has_next_page: boolean
+    current_page: number
+    items: {
+      count: number
+      total: number
+      per_page: number
+    }
+  }
 }
 
 interface EnhancedMangaGridProps {
@@ -60,17 +75,17 @@ export function EnhancedMangaGrid({
         genre: selectedGenre,
         status: selectedStatus,
         year: selectedYear,
-      })
+      }) as MangaResponse
 
       if (reset) {
-        setManga(response.manga)
+        setManga(response.data || [])
         setPage(2)
       } else {
-        setManga((prev) => [...prev, ...response.manga])
+        setManga((prev) => [...prev, ...(response.data || [])])
         setPage((prev) => prev + 1)
       }
 
-      setHasMore(response.pagination.page < response.pagination.pages)
+      setHasMore(response.pagination?.has_next_page || false)
     } catch (error) {
       console.error("Failed to load manga:", error)
       toast({
@@ -86,10 +101,10 @@ export function EnhancedMangaGrid({
   const toggleReadingList = async (mangaItem: Manga) => {
     try {
       if (mangaItem.isInReadingList) {
-        await api.removeFromReadingList(mangaItem.id)
+        await api.removeFromReadingList(mangaItem.malId)
         setManga((prev) =>
           prev.map((item) =>
-            item.id === mangaItem.id ? { ...item, isInReadingList: false, readingStatus: undefined } : item,
+            item.malId === mangaItem.malId ? { ...item, isInReadingList: false, readingStatus: undefined } : item,
           ),
         )
         toast({
@@ -97,10 +112,10 @@ export function EnhancedMangaGrid({
           description: `${mangaItem.title} has been removed from your reading list.`,
         })
       } else {
-        await api.addToReadingList(mangaItem.id, "plan_to_read")
+        await api.addToReadingList(mangaItem.malId, "plan_to_read")
         setManga((prev) =>
           prev.map((item) =>
-            item.id === mangaItem.id ? { ...item, isInReadingList: true, readingStatus: "plan_to_read" } : item,
+            item.malId === mangaItem.malId ? { ...item, isInReadingList: true, readingStatus: "plan_to_read" } : item,
           ),
         )
         toast({
@@ -157,7 +172,7 @@ export function EnhancedMangaGrid({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {manga.map((mangaItem, index) => (
           <motion.div
-            key={mangaItem.id}
+            key={mangaItem.malId}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
@@ -203,12 +218,12 @@ export function EnhancedMangaGrid({
                   {mangaItem.status}
                 </Badge>
 
-                {/* Rating */}
+                {/* Rating Badge */}
                 {mangaItem.rating && (
-                  <div className="absolute top-2 right-2 bg-black/70 rounded-full px-2 py-1 flex items-center space-x-1">
-                    <Star className="w-3 h-3 text-yellow-400 fill-current" />
-                    <span className="text-xs text-white font-medium">{mangaItem.rating.toFixed(1)}</span>
-                  </div>
+                  <Badge className="absolute top-2 right-2 bg-yellow-500 text-white">
+                    <Star className="w-3 h-3 mr-1" />
+                    {mangaItem.rating.toFixed(1)}
+                  </Badge>
                 )}
 
                 {/* Reading Status */}
@@ -222,56 +237,53 @@ export function EnhancedMangaGrid({
               </div>
 
               <CardContent className="p-4">
-                <h3 className="font-semibold text-white mb-2 line-clamp-2 group-hover:text-orange-300 transition-colors">
-                  {mangaItem.title}
-                </h3>
+                <h3 className="text-lg font-semibold text-white line-clamp-1 mb-1">{mangaItem.title}</h3>
 
-                <div className="flex items-center space-x-4 text-sm text-gray-400 mb-3">
-                  <div className="flex items-center space-x-1">
-                    <Eye className="w-3 h-3" />
-                    <span>{mangaItem.chapters} ch</span>
-                  </div>
-                  {mangaItem.volumes && (
+                {/* Author and Year */}
+                <div className="flex items-center space-x-2 text-sm text-gray-400 mb-2">
+                  {mangaItem.authors && mangaItem.authors.length > 0 && (
                     <div className="flex items-center space-x-1">
-                      <BookOpen className="w-3 h-3" />
-                      <span>{mangaItem.volumes} vol</span>
+                      <User className="w-3 h-3" />
+                      <span className="truncate">{mangaItem.authors[0].name}</span>
                     </div>
                   )}
+                  {mangaItem.year && (
                   <div className="flex items-center space-x-1">
                     <Calendar className="w-3 h-3" />
                     <span>{mangaItem.year}</span>
                   </div>
-                </div>
-
-                {/* Authors */}
-                {mangaItem.authors.length > 0 && (
-                  <div className="flex items-center space-x-1 text-sm text-gray-400 mb-3">
-                    <User className="w-3 h-3" />
-                    <span className="truncate">{mangaItem.authors[0]}</span>
-                    {mangaItem.authors.length > 1 && <span>+{mangaItem.authors.length - 1}</span>}
-                  </div>
-                )}
-
-                {/* Genres */}
-                <div className="flex flex-wrap gap-1 mb-3">
-                  {mangaItem.genres.slice(0, 3).map((genre) => (
-                    <Badge
-                      key={genre}
-                      variant="secondary"
-                      className="text-xs bg-orange-500/20 text-orange-300 hover:bg-orange-500/30"
-                    >
-                      {genre}
-                    </Badge>
-                  ))}
-                  {mangaItem.genres.length > 3 && (
-                    <Badge variant="secondary" className="text-xs bg-gray-500/20 text-gray-400">
-                      +{mangaItem.genres.length - 3}
-                    </Badge>
                   )}
                 </div>
 
+                {/* Genres */}
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {mangaItem.genres && mangaItem.genres.slice(0, 3).map((genre) => (
+                    <Badge key={genre.id} variant="secondary" className="text-xs">
+                      {genre.name}
+                    </Badge>
+                  ))}
+                </div>
+
                 {/* Synopsis */}
-                <p className="text-sm text-gray-400 line-clamp-3">{mangaItem.synopsis}</p>
+                {mangaItem.synopsis && (
+                  <p className="text-sm text-gray-400 line-clamp-2 mt-2">{mangaItem.synopsis}</p>
+                )}
+
+                {/* Stats */}
+                <div className="flex items-center space-x-4 mt-3 text-sm text-gray-400">
+                  {mangaItem.rating && (
+                    <div className="flex items-center">
+                      <Star className="w-4 h-4 text-yellow-500 mr-1" />
+                      <span>{mangaItem.rating.toFixed(1)}</span>
+                    </div>
+                  )}
+                  {mangaItem.chapters && (
+                    <div className="flex items-center">
+                      <Book className="w-4 h-4 text-blue-500 mr-1" />
+                      <span>{mangaItem.chapters} chapters</span>
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </motion.div>

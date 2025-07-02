@@ -38,6 +38,10 @@ model User {
   subscription      Subscription?
   narrationRequests NarrationRequest[]
   previewRequests   PreviewRequest[]
+  watchHistory      WatchHistory[]
+  watchProgress     WatchProgress[]
+  readHistory       ReadHistory[]
+  readProgress      ReadProgress[]
 
   @@map("users")
 }
@@ -67,6 +71,8 @@ model Anime {
   characters  Character[]
   episodes_   Episode[]
   quizzes     Quiz[]
+  watchHistory WatchHistory[]
+  watchProgress WatchProgress[]
 
   @@map("anime")
 }
@@ -97,6 +103,8 @@ model Manga {
   quizzes           Quiz[]
   narrationRequests NarrationRequest[]
   previewRequests   PreviewRequest[]
+  readHistory       ReadHistory[]
+  readProgress      ReadProgress[]
 
   @@map("manga")
 }
@@ -459,4 +467,67 @@ model KnowledgeBase {
   createdAt   DateTime @default(now())
 
   @@map("knowledge_base")
+}
+
+model WatchHistory {
+  id        String   @id @default(uuid())
+  userId    String
+  animeId   String
+  episodeId String
+  timestamp DateTime @default(now())
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  anime Anime @relation(fields: [animeId], references: [id], onDelete: Cascade)
+
+  @@map("watch_history")
+}
+
+model WatchProgress {
+  id        String   @id @default(uuid())
+  userId    String
+  animeId   String
+  episodeId String
+  progress  Float    // Progress in seconds
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  anime Anime @relation(fields: [animeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, animeId, episodeId])
+  @@map("watch_progress")
+}
+
+model ReadHistory {
+  id           String   @id @default(uuid())
+  userId       String
+  mangaId      String
+  chapterNumber Float
+  page         Int
+  timestamp    DateTime @default(now())
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  manga Manga @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+
+  @@map("read_history")
+}
+
+model ReadProgress {
+  id            String   @id @default(uuid())
+  userId        String
+  mangaId       String
+  chapterNumber Float
+  page          Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  manga Manga @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, mangaId, chapterNumber])
+  @@map("read_progress")
 }

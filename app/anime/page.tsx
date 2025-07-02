@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import { Search, Filter, TrendingUp, Calendar, Star } from "lucide-react"
 import { Input } from "@/components/ui/input"
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { EnhancedAnimeGrid } from "@/components/enhanced-anime-grid"
+import api from "@/lib/api"
 
 const genres = [
   "Action",
@@ -34,6 +35,39 @@ export default function AnimePage() {
   const [selectedStatus, setSelectedStatus] = useState<string>("any")
   const [selectedYear, setSelectedYear] = useState<number | "any">("any")
   const [showFilters, setShowFilters] = useState(false)
+  const [animeList, setAnimeList] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(true)
+
+  const fetchAnime = async (resetList = false) => {
+    try {
+      setLoading(true)
+      setError(null)
+      const currentPage = resetList ? 1 : page
+      const response = await api.searchAnime(searchQuery, currentPage)
+      
+      if (resetList) {
+        setAnimeList(response.data)
+      } else {
+        setAnimeList(prev => [...prev, ...response.data])
+      }
+      
+      setHasMore(response.pagination.has_next_page)
+      if (!resetList) {
+        setPage(prev => prev + 1)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch anime")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchAnime(true)
+  }, [searchQuery])
 
   const clearFilters = () => {
     setSearchQuery("")
@@ -195,25 +229,39 @@ export default function AnimePage() {
             <Star className="w-3 h-3 mr-1" />
             Completed Series
           </Badge>
-          <Badge
-            variant="outline"
-            className="cursor-pointer border-green-500 text-green-400 hover:bg-green-500/10"
-            onClick={() => setSelectedYear(new Date().getFullYear())}
-          >
-            <Calendar className="w-3 h-3 mr-1" />
-            This Year
-          </Badge>
         </motion.div>
 
+        {/* Error Message */}
+        {error && (
+          <div className="text-red-400 text-center mb-8">
+            {error}
+          </div>
+        )}
+
         {/* Anime Grid */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
           <EnhancedAnimeGrid
-            searchQuery={searchQuery}
-            selectedGenre={selectedGenre}
-            selectedStatus={selectedStatus}
-            selectedYear={selectedYear}
-          />
-        </motion.div>
+          anime={animeList}
+          loading={loading}
+          hasMore={hasMore}
+          onLoadMore={() => fetchAnime()}
+        />
+
+        {/* No Results */}
+        {!loading && animeList.length === 0 && (
+          <div className="text-center text-gray-400 mt-8">
+            <div className="text-6xl mb-4">👀</div>
+            <p>No anime found matching your criteria.</p>
+            {hasActiveFilters && (
+              <Button
+                onClick={clearFilters}
+                variant="link"
+                className="text-purple-400 hover:text-purple-300 mt-2"
+              >
+                Clear all filters
+              </Button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
