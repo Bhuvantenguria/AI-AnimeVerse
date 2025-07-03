@@ -55,16 +55,18 @@ if (shouldUseFallback) {
     const options = config.REDIS_URL ? config.REDIS_URL : {
       host: config.REDIS_HOST || 'localhost',
       port: config.REDIS_PORT || 6379,
-        password: config.REDIS_PASSWORD,
-      maxRetriesPerRequest: 1,
+      password: config.REDIS_PASSWORD,
+      maxRetriesPerRequest: 3,
       enableReadyCheck: false,
+      connectTimeout: 10000,
+      lazyConnect: true,
       retryStrategy: (times) => {
-        if (times > 3) {
+        if (times > 2) {
           console.warn("Redis retry limit reached, switching to fallback client")
           redisClient = new FallbackRedisClient()
           return null
         }
-        return Math.min(times * 100, 3000)
+        return Math.min(times * 500, 2000)
       }
     }
 
@@ -73,12 +75,18 @@ if (shouldUseFallback) {
     redisClient.on("error", (err) => {
       console.warn("Redis connection error:", err.message)
       if (!(redisClient instanceof FallbackRedisClient)) {
+        console.log("Switching to fallback Redis client")
         redisClient = new FallbackRedisClient()
       }
     })
 
     redisClient.on("connect", () => {
       console.log("Redis connected successfully")
+    })
+
+    await redisClient.connect().catch(() => {
+      console.warn("Redis connection failed, using fallback")
+      redisClient = new FallbackRedisClient()
     })
   } catch (error) {
     console.warn("Redis initialization failed:", error.message)

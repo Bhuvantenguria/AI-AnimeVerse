@@ -45,9 +45,17 @@ interface AnimeResponse {
     rating: number
     year: number
     status: string
-    episodes: number
+    episodes: Array<{
+      id: string
+      number: number
+      title: string
+      thumbnail: string
+      duration: number
+    }>
     genres: string[]
     source?: string
+    isInWatchlist?: boolean
+    watchlistStatus?: string
   }>
   pagination: {
     has_next_page: boolean
@@ -58,6 +66,74 @@ interface AnimeResponse {
       per_page: number
     }
   }
+}
+
+interface AnimeDetails {
+  id: string
+  malId?: number
+  title: string
+  titleJp?: string
+  synopsis: string
+  coverImage: string
+  bannerImage?: string
+  rating: number
+  year: number
+  status: string
+  episodes: Array<{
+    id: string
+    number: number
+    title: string
+    thumbnail: string
+    duration: number
+  }>
+  season?: string
+  genres: string[]
+  studios: string[]
+  themes: string[]
+  characters: Array<{
+    name: string
+    nameJp?: string
+    description: string
+    avatar: string
+    personality: string
+  }>
+  animeProgress?: {
+    currentEpisode: number
+    totalEpisodes?: number
+  }
+  watchlistStatus?: {
+    status: string
+    rating?: number
+  }
+  streamingInfo?: any
+  isInWatchlist: boolean
+}
+
+interface StreamingSource {
+  url: string
+  quality: string
+  isM3U8?: boolean
+  size?: string
+}
+
+interface FallbackLink {
+  name: string
+  url: string
+  type: string
+}
+
+interface StreamingResponse {
+  type: "stream" | "embed" | "fallback"
+  sources?: StreamingSource[]
+  url?: string
+  links?: FallbackLink[]
+  provider?: string
+  headers?: Record<string, string>
+  subtitles?: Array<{
+    lang: string
+    language: string
+    url: string
+  }>
 }
 
 class ApiClient {
@@ -114,40 +190,45 @@ class ApiClient {
   }
 
   async getAnimeById(id: string) {
-    return this.request<AnimeResponse["data"][0]>(`/api/anime/${id}`)
+    return this.request<AnimeDetails>(`/api/anime/${id}`)
   }
 
   async getEpisodeStream(animeId: string, episodeId: string) {
-    const response = await this.request<{
-      sources: Array<{
-        url: string
-        quality: string
-        isM3U8?: boolean
-      }>
-      headers?: Record<string, string>
-    }>(`/api/anime/${animeId}/episodes/${episodeId}/stream`)
+    try {
+      const response = await this.request<StreamingResponse>(`/api/anime/${animeId}/episodes/${episodeId}/stream`)
 
-    if (!response.sources?.length) {
-      throw new Error("No streaming sources available")
+      // Handle different streaming response types
+      if (response.type === "stream" && response.sources?.length > 0) {
+        // Filter and sort sources by quality
+        const sources = response.sources
+          .filter(source => source.url && source.quality)
+          .sort((a, b) => {
+            const qualityA = parseInt(a.quality.replace(/[^\d]/g, '')) || 0
+            const qualityB = parseInt(b.quality.replace(/[^\d]/g, '')) || 0
+            return qualityB - qualityA
+          })
+
+        if (sources.length > 0) {
+          return {
+            ...response,
+            sources
+          }
+        }
+      }
+
+      // Return the response as is for embed and fallback types
+      return response
+    } catch (error) {
+      console.error("Streaming API error:", error)
+      throw error
     }
+  }
 
-    // Filter and sort sources by quality
-    const sources = response.sources
-      .filter(source => source.url && source.quality)
-      .sort((a, b) => {
-        const qualityA = parseInt(a.quality.replace(/[^\d]/g, '')) || 0
-        const qualityB = parseInt(b.quality.replace(/[^\d]/g, '')) || 0
-        return qualityB - qualityA
-      })
-
-    if (!sources.length) {
-      throw new Error("No valid streaming sources found")
-    }
-
-    return {
-      sources,
-      headers: response.headers || {}
-    }
+  async updateAnimeProgress(animeId: string, episodeId: string, progress: number) {
+    return this.request(`/api/anime/${animeId}/progress`, {
+      method: "POST",
+      body: JSON.stringify({ episodeId, progress }),
+    })
   }
 
   // Manga endpoints
@@ -160,42 +241,97 @@ class ApiClient {
   }
 
   async getMangaById(id: string) {
-    return this.request<MangaResponse["data"][0]>(`/api/manga/${id}`)
+    return this.request(`/api/manga/${id}`)
   }
 
   async getChapterPages(mangaId: string, chapterId: string) {
-    return this.request<{
-      pages: Array<{ url: string }>
-    }>(`/api/manga/${mangaId}/chapters/${chapterId}`)
+    return this.request(`/api/manga/${mangaId}/chapters/${chapterId}/pages`)
   }
 
   // User endpoints
-  async addToWatchlist(animeId: string) {
-    return this.request(`/api/user/watchlist/${animeId}`, {
-      method: "POST",
+  async getProfile() {
+    return this.request("/api/user/profile")
+  }
+
+  async updateProfile(data: { username?: string; bio?: string; avatar?: string }) {
+    return this.request("/api/user/profile", {
+      method: "PUT",
+      body: JSON.stringify(data),
     })
+  }
+
+  // Watchlist endpoints
+  async getWatchlist(status?: string, page = 1, limit = 20) {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+    })
+    if (status) {
+      params.append("status", status)
+    }
+    return this.request(`/api/user/watchlist?${params}`)
+  }
+
+  async addToWatchlist(animeId: string, status = "plan_to_watch") {
+    return this.request("/api/user/watchlist", {
+      method: "POST",
+      body: JSON.stringify({ animeId, status }),
+    })
+  }
+
+  async updateWatchlistItem(animeId: string, status: string, rating?: number) {
+    return this.request(`/api/user/watchlist/${animeId}`, {
+      method: "PUT",
+      body: JSON.stringify({ status, rating }),
+    })
+  }
+
+  async removeFromWatchlist(animeId: string) {
+    return this.request(`/api/user/watchlist/${animeId}`, {
+      method: "DELETE",
+    })
+  }
+
+  // Reading list endpoints
+  async getReadingList(status?: string, page = 1, limit = 20) {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+    })
+    if (status) {
+      params.append("status", status)
+    }
+    return this.request(`/api/user/reading-list?${params}`)
   }
 
   async addToReadingList(mangaId: string) {
-    return this.request(`/api/user/reading-list/${mangaId}`, {
+    return this.request("/api/user/reading-list", {
       method: "POST",
-    })
-  }
-
-  async updateWatchProgress(animeId: string, episodeId: string, progress: number) {
-    return this.request(`/api/anime/${animeId}/episodes/${episodeId}/progress`, {
-      method: "POST",
-      body: JSON.stringify({ progress }),
+      body: JSON.stringify({ mangaId }),
     })
   }
 
   async updateReadProgress(mangaId: string, chapterId: string, page: number) {
-    return this.request(`/api/manga/${mangaId}/chapters/${chapterId}/progress`, {
-      method: "POST",
-      body: JSON.stringify({ page }),
+    return this.request(`/api/user/reading-list/${mangaId}/progress`, {
+      method: "PUT",
+      body: JSON.stringify({ chapterId, page }),
     })
+  }
+
+  // Stats and achievements
+  async getUserStats() {
+    return this.request("/api/user/stats")
+  }
+
+  async getUserAchievements() {
+    return this.request("/api/user/achievements")
+  }
+
+  async getUserProgress() {
+    return this.request("/api/user/progress")
   }
 }
 
 const api = new ApiClient(API_BASE_URL)
+
 export default api

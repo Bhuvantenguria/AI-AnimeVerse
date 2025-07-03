@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useCallback } from "react"
+import { useRef, useCallback, useState } from "react"
 import { motion } from "framer-motion"
 import { Star, Play, Plus, Check, Eye, Calendar } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
+import api from "@/lib/api"
 
 interface Anime {
   id: string
@@ -30,12 +31,20 @@ interface EnhancedAnimeGridProps {
   loading: boolean
   hasMore: boolean
   onLoadMore: () => void
+  onAnimeUpdate?: (animeId: string, updates: Partial<Anime>) => void
 }
 
-export function EnhancedAnimeGrid({ anime, loading, hasMore, onLoadMore }: EnhancedAnimeGridProps) {
+export function EnhancedAnimeGrid({ 
+  anime, 
+  loading, 
+  hasMore, 
+  onLoadMore, 
+  onAnimeUpdate 
+}: EnhancedAnimeGridProps) {
   const { toast } = useToast()
   const router = useRouter()
   const observer = useRef<IntersectionObserver>()
+  const [updatingWatchlist, setUpdatingWatchlist] = useState<string | null>(null)
 
   const lastAnimeElementRef = useCallback(
     (node: HTMLDivElement | null) => {
@@ -57,17 +66,31 @@ export function EnhancedAnimeGrid({ anime, loading, hasMore, onLoadMore }: Enhan
 
   const toggleWatchlist = async (animeItem: Anime) => {
     try {
+      setUpdatingWatchlist(animeItem.id)
+      
       if (animeItem.isInWatchlist) {
-        // await api.removeFromWatchlist(animeItem.id)
+        await api.removeFromWatchlist(animeItem.id)
         toast({
           title: "Removed from Watchlist",
           description: `${animeItem.title} has been removed from your watchlist.`,
         })
+        
+        // Update the local state
+        onAnimeUpdate?.(animeItem.id, { 
+          isInWatchlist: false, 
+          watchlistStatus: undefined 
+        })
       } else {
-        // await api.addToWatchlist(animeItem.id)
+        await api.addToWatchlist(animeItem.id, "plan_to_watch")
         toast({
           title: "Added to Watchlist",
           description: `${animeItem.title} has been added to your watchlist.`,
+        })
+        
+        // Update the local state
+        onAnimeUpdate?.(animeItem.id, { 
+          isInWatchlist: true, 
+          watchlistStatus: "plan_to_watch" 
         })
       }
     } catch (error) {
@@ -77,6 +100,8 @@ export function EnhancedAnimeGrid({ anime, loading, hasMore, onLoadMore }: Enhan
         description: "Failed to update watchlist. Please try again.",
         variant: "destructive",
       })
+    } finally {
+      setUpdatingWatchlist(null)
     }
   }
 
@@ -139,6 +164,7 @@ export function EnhancedAnimeGrid({ anime, loading, hasMore, onLoadMore }: Enhan
                       <Button
                         size="sm"
                         variant="outline"
+                        disabled={updatingWatchlist === animeItem.id}
                         onClick={(e) => {
                           e.stopPropagation()
                           toggleWatchlist(animeItem)
@@ -149,7 +175,13 @@ export function EnhancedAnimeGrid({ anime, loading, hasMore, onLoadMore }: Enhan
                             : "bg-white/10 hover:bg-white/20"
                         }`}
                       >
-                        {animeItem.isInWatchlist ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                        {updatingWatchlist === animeItem.id ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : animeItem.isInWatchlist ? (
+                          <Check className="w-4 h-4" />
+                        ) : (
+                          <Plus className="w-4 h-4" />
+                        )}
                       </Button>
                     </div>
                   </div>
@@ -165,6 +197,14 @@ export function EnhancedAnimeGrid({ anime, loading, hasMore, onLoadMore }: Enhan
                   <Badge className="absolute top-2 right-2 bg-yellow-500 text-white">
                     <Star className="w-3 h-3 mr-1" />
                     {animeItem.rating.toFixed(1)}
+                  </Badge>
+                )}
+
+                {/* Watchlist Status Badge */}
+                {animeItem.isInWatchlist && (
+                  <Badge className="absolute bottom-2 right-2 bg-green-600 text-white">
+                    <Check className="w-3 h-3 mr-1" />
+                    In Watchlist
                   </Badge>
                 )}
               </div>

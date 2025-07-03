@@ -48,6 +48,73 @@ export default async function userRoutes(fastify, options) {
     userController.getWatchlist,
   )
 
+  // Add anime to watchlist
+  fastify.post(
+    "/me/watchlist/:animeId",
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        params: {
+          type: "object",
+          properties: {
+            animeId: { type: "string" },
+          },
+          required: ["animeId"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            status: { type: "string", enum: ["watching", "completed", "on_hold", "dropped", "plan_to_watch"], default: "plan_to_watch" },
+          },
+        },
+      },
+    },
+    userController.addToWatchlist,
+  )
+
+  // Update watchlist item
+  fastify.patch(
+    "/me/watchlist/:animeId",
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        params: {
+          type: "object",
+          properties: {
+            animeId: { type: "string" },
+          },
+          required: ["animeId"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            status: { type: "string", enum: ["watching", "completed", "on_hold", "dropped", "plan_to_watch"] },
+            rating: { type: "number", minimum: 0, maximum: 10 },
+          },
+        },
+      },
+    },
+    userController.updateWatchlistItem,
+  )
+
+  // Remove anime from watchlist
+  fastify.delete(
+    "/me/watchlist/:animeId",
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        params: {
+          type: "object",
+          properties: {
+            animeId: { type: "string" },
+          },
+          required: ["animeId"],
+        },
+      },
+    },
+    userController.removeFromWatchlist,
+  )
+
   // Get user reading list
   fastify.get(
     "/me/reading-list",

@@ -65,6 +65,16 @@ export default function AnimePage() {
     }
   }
 
+  const handleAnimeUpdate = (animeId: string, updates: Partial<any>) => {
+    setAnimeList(prev => 
+      prev.map(anime => 
+        anime.id === animeId 
+          ? { ...anime, ...updates }
+          : anime
+      )
+    )
+  }
+
   useEffect(() => {
     fetchAnime(true)
   }, [searchQuery])
@@ -244,6 +254,7 @@ export default function AnimePage() {
           loading={loading}
           hasMore={hasMore}
           onLoadMore={() => fetchAnime()}
+          onAnimeUpdate={handleAnimeUpdate}
         />
 
         {/* No Results */}

@@ -49,6 +49,7 @@
     "@radix-ui/react-tooltip": "1.1.6",
     "@tanstack/react-query": "latest",
     "@tanstack/react-query-devtools": "latest",
+    "aniwatch": "^2.23.3",
     "autoprefixer": "^10.4.20",
     "axios": "latest",
     "bcryptjs": "latest",

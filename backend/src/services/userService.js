@@ -92,6 +92,74 @@ export const userService = {
     return await UserModel.getProgress(this.prisma, userId)
   },
 
+  // Add anime to watchlist
+  async addToWatchlist(userId, animeId, status = "plan_to_watch") {
+    return await this.prisma.watchlist.upsert({
+      where: {
+        userId_animeId: {
+          userId,
+          animeId,
+        },
+      },
+      update: {
+        status,
+        updatedAt: new Date(),
+      },
+      create: {
+        userId,
+        animeId,
+        status,
+      },
+      include: {
+        anime: {
+          select: {
+            id: true,
+            title: true,
+            coverImage: true,
+          },
+        },
+      },
+    })
+  },
+
+  // Remove anime from watchlist
+  async removeFromWatchlist(userId, animeId) {
+    return await this.prisma.watchlist.delete({
+      where: {
+        userId_animeId: {
+          userId,
+          animeId,
+        },
+      },
+    })
+  },
+
+  // Update watchlist status
+  async updateWatchlistStatus(userId, animeId, status, rating = null) {
+    return await this.prisma.watchlist.update({
+      where: {
+        userId_animeId: {
+          userId,
+          animeId,
+        },
+      },
+      data: {
+        status,
+        rating,
+        updatedAt: new Date(),
+      },
+      include: {
+        anime: {
+          select: {
+            id: true,
+            title: true,
+            coverImage: true,
+          },
+        },
+      },
+    })
+  },
+
   // Add XP to user
   async addXP(userId, xp) {
     const user = await this.getUserById(userId)
@@ -122,7 +190,7 @@ export const userService = {
   },
 }
 
-// Inject Prisma instance
+// Create userService instance with injected dependencies
 export function createUserService(prisma) {
   return {
     ...userService,

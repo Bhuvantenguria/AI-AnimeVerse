@@ -5,13 +5,13 @@ import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { CharacterChatLauncher } from "@/components/character-chat-launcher"
+import { Progress } from "@/components/ui/progress"
+import { Star, Play, Plus, MessageCircle, Users, ChevronLeft, ChevronRight } from "lucide-react"
+import { AnimeStreamingPlayer } from "@/components/anime-streaming-player"
 import { CharacterChatPanel } from "@/components/character-chat-panel"
 import { CharacterSwitcher } from "@/components/character-switcher"
-import { HolographicVideoPlayer } from "@/components/holographic-video-player"
-import { Play, Plus, Star, Users, MessageCircle, BookOpen, Share2, Heart, ChevronLeft, ChevronRight } from "lucide-react"
-import api from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
+import api from "@/lib/api"
 
 interface Episode {
   id: string
@@ -19,32 +19,49 @@ interface Episode {
   title: string
   thumbnail: string
   duration: number
-  streamUrl: string
+  streamUrl?: string
+}
+
+interface StreamingSource {
+  url: string
+  quality: string
+  isM3U8?: boolean
+  size?: string
+}
+
+interface StreamingResponse {
+  sources: StreamingSource[]
+  headers?: Record<string, string>
+  subtitles?: Array<{
+    lang: string
+    language: string
+    url: string
+  }>
+}
+
+interface Character {
+  name: string
+  nameJp?: string
+  description: string
+  avatar: string
+  personality: string
 }
 
 interface Anime {
   id: string
   title: string
-  image: string
-  banner: string
+  coverImage: string
+  bannerImage?: string
   rating: number
   year: number
   status: string
   episodes: Episode[]
   genres: string[]
   synopsis: string
-  characters: Array<{
-    id: string
-    name: string
-    avatar: string
-    anime: string
-    theme: string
-    status: string
-    personality: string[]
-  }>
+  characters: Character[]
 }
 
-const EPISODES_PER_PAGE = 20
+const EPISODES_PER_PAGE = 12
 
 export default function AnimeDetailPage() {
   const params = useParams()
@@ -55,9 +72,11 @@ export default function AnimeDetailPage() {
   const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null)
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [showCharacterSwitcher, setShowCharacterSwitcher] = useState(false)
-  const [currentCharacter, setCurrentCharacter] = useState<Anime["characters"][0] | null>(null)
+  const [currentCharacter, setCurrentCharacter] = useState<Character | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [isLoadingEpisode, setIsLoadingEpisode] = useState(false)
+  const [streamingData, setStreamingData] = useState<StreamingResponse | null>(null)
+  const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null)
 
   useEffect(() => {
     const fetchAnime = async () => {
@@ -65,18 +84,24 @@ export default function AnimeDetailPage() {
         setLoading(true)
         const response = await api.getAnimeById(params.id as string)
         
-        // Transform episodes data if it's just a number
+        // Ensure episodes is always an array with proper IDs
         const transformedResponse = {
           ...response,
           episodes: Array.isArray(response.episodes) 
-            ? response.episodes 
+            ? response.episodes.map((ep, index) => ({
+                ...ep,
+                id: ep.id || `${response.id}-ep-${ep.number || index + 1}`, // Generate proper episode IDs
+                number: ep.number || index + 1,
+                title: ep.title || `Episode ${ep.number || index + 1}`,
+                thumbnail: ep.thumbnail || response.coverImage,
+                duration: ep.duration || 24
+              }))
             : Array.from({ length: response.episodes || 0 }, (_, i) => ({
-                id: `${i + 1}`,
+                id: `${response.id}-ep-${i + 1}`,
                 number: i + 1,
                 title: `Episode ${i + 1}`,
-                thumbnail: response.image, // Use anime cover as fallback
-                duration: 24, // Default duration
-                streamUrl: `/api/anime/${response.id}/episodes/${i + 1}/stream`
+                thumbnail: response.coverImage,
+                duration: 24
               }))
         }
         
@@ -99,49 +124,81 @@ export default function AnimeDetailPage() {
     fetchAnime()
   }, [params.id])
 
-  const handleSwitchCharacter = (character: Anime["characters"][0]) => {
-    setCurrentCharacter(character)
+  const handleSwitchCharacter = (character: Character | any) => {
+    // Handle both Character types - from anime data and from character switcher
+    if (anime && anime.characters && anime.characters.length > 0) {
+      // Find matching character from anime data if it exists
+      const matchingCharacter = anime.characters.find(c => c.name === character.name)
+      if (matchingCharacter) {
+        setCurrentCharacter(matchingCharacter)
+      } else {
+        // Create a compatible character object
+        setCurrentCharacter({
+          name: character.name,
+          description: character.status || "Available for chat",
+          avatar: character.avatar,
+          personality: Array.isArray(character.personality) ? character.personality[0] : character.personality || "Friendly"
+        })
+      }
+    }
     setIsChatOpen(true)
   }
 
   const handleEpisodeSelect = async (episode: Episode) => {
     try {
       setIsLoadingEpisode(true)
+      setStreamingData(null)
       
-      // Get streaming URL
-      const streamData = await api.getEpisodeStream(anime!.id, episode.number.toString())
+      // Get streaming data using the proper episode ID
+      const streamData = await api.getEpisodeStream(anime!.id, episode.id)
       
-      if (!streamData?.sources?.length) {
+      // Handle different streaming data types
+      if (streamData.type === "stream" && streamData.sources?.length > 0) {
+        // Direct streaming available
+        const sources = streamData.sources
+          .filter(source => source.url && source.quality)
+          .sort((a, b) => {
+            const qualityA = parseInt(a.quality.replace(/[^\d]/g, '')) || 0
+            const qualityB = parseInt(b.quality.replace(/[^\d]/g, '')) || 0
+            return qualityB - qualityA
+          })
+
+        if (sources.length > 0) {
+          const streamUrl = sources[0].url
+
+          // Update current episode with stream info
+          setCurrentEpisode({
+            ...episode,
+            streamUrl
+          })
+
+          // Store streaming data for quality selection
+          setStreamingData(streamData)
+
+          // Update URL without navigation
+          window.history.pushState({}, '', `/anime/${anime!.id}?episode=${episode.number}`)
+        } else {
+          throw new Error("No valid streaming sources found")
+        }
+      } else if (streamData.type === "embed" && streamData.url) {
+        // Embed streaming available
+        setCurrentEpisode({
+          ...episode,
+          streamUrl: streamData.url
+        })
+        setStreamingData(streamData)
+        window.history.pushState({}, '', `/anime/${anime!.id}?episode=${episode.number}`)
+      } else if (streamData.type === "fallback" && streamData.links?.length > 0) {
+        // Only fallback links available
+        setCurrentEpisode({
+          ...episode,
+          streamUrl: undefined // No direct stream URL
+        })
+        setStreamingData(streamData)
+        window.history.pushState({}, '', `/anime/${anime!.id}?episode=${episode.number}`)
+      } else {
         throw new Error("No streaming sources available")
       }
-
-      // Get highest quality source with fallback
-      const sources = streamData.sources
-        .filter(source => source.url && source.quality) // Filter out invalid sources
-        .sort((a, b) => {
-          const qualityA = parseInt(a.quality.replace(/[^\d]/g, '')) || 0
-          const qualityB = parseInt(b.quality.replace(/[^\d]/g, '')) || 0
-          return qualityB - qualityA
-        })
-
-      if (!sources.length) {
-        throw new Error("No valid streaming sources found")
-      }
-
-      const streamUrl = sources[0].url
-      
-      // Add headers if provided
-      const headers = streamData.headers || {}
-
-      // Update current episode with stream info
-      setCurrentEpisode({
-        ...episode,
-        streamUrl,
-        headers // Pass headers to video player
-      })
-
-      // Update URL without navigation
-      window.history.pushState({}, '', `/anime/${anime!.id}?episode=${episode.number}`)
 
     } catch (error) {
       console.error("Failed to get streaming URL:", error)
@@ -151,8 +208,15 @@ export default function AnimeDetailPage() {
         variant: "destructive",
       })
       setCurrentEpisode(null)
+      setStreamingData(null)
     } finally {
       setIsLoadingEpisode(false)
+    }
+  }
+
+  const handleRetryStreaming = async () => {
+    if (currentEpisode) {
+      await handleEpisodeSelect(currentEpisode)
     }
   }
 
@@ -198,102 +262,94 @@ export default function AnimeDetailPage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-t-primary animate-spin rounded-full" />
-          <p className="mt-4">Loading anime details...</p>
+          <p className="mt-4 text-muted-foreground">Loading anime details...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen">
-      {/* Video Player */}
-      {currentEpisode && (
-        <div className="fixed inset-0 z-50 bg-black">
-          <div className="relative w-full h-full">
-            {isLoadingEpisode ? (
-              <div className="flex-1 flex items-center justify-center">
-                <div className="text-center">
-                  <div className="w-16 h-16 border-4 border-t-primary animate-spin rounded-full" />
-                  <p className="mt-4">Loading episode...</p>
-                </div>
-              </div>
-            ) : (
-              <HolographicVideoPlayer
-                videoUrl={currentEpisode.streamUrl}
-                title={`${anime.title} - Episode ${currentEpisode.number}`}
-                onClose={() => {
-                  setCurrentEpisode(null)
-                  window.history.pushState({}, '', `/anime/${anime.id}`)
-                }}
-                onPrevious={
-                  anime.episodes.findIndex(ep => ep.number === currentEpisode.number) > 0
-                    ? handlePreviousEpisode
-                    : undefined
-                }
-                onNext={
-                  anime.episodes.findIndex(ep => ep.number === currentEpisode.number) < anime.episodes.length - 1
-                    ? handleNextEpisode
-                    : undefined
-                }
-              />
-            )}
-          </div>
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-background via-background/95 to-primary/5">
+      {/* Anime Streaming Player */}
+      {currentEpisode && streamingData && (
+        <AnimeStreamingPlayer
+          videoUrl={currentEpisode.streamUrl}
+          animeTitle={anime.title}
+          episodeNumber={currentEpisode.number}
+          episodeTitle={currentEpisode.title}
+          sources={streamingData.sources}
+          streamingData={streamingData}
+          onClose={() => {
+            setCurrentEpisode(null)
+            setStreamingData(null)
+            window.history.pushState({}, '', `/anime/${anime.id}`)
+          }}
+          onPreviousEpisode={handlePreviousEpisode}
+          onNextEpisode={handleNextEpisode}
+          hasPrevious={anime.episodes.findIndex(ep => ep.id === currentEpisode.id) > 0}
+          hasNext={anime.episodes.findIndex(ep => ep.id === currentEpisode.id) < anime.episodes.length - 1}
+          onRetry={handleRetryStreaming}
+        />
       )}
 
-      {/* Hero Banner */}
-      <div className="relative h-96 overflow-hidden">
+      {/* Hero Section */}
+      <div className="relative overflow-hidden">
         <div 
-          className="absolute inset-0 bg-cover bg-center" 
-          style={{ backgroundImage: `url(${anime.banner})` }} 
+          className="absolute inset-0 bg-cover bg-center opacity-20"
+          style={{ backgroundImage: `url(${anime.bannerImage || anime.coverImage})` }}
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-transparent" />
 
-        <div className="relative container mx-auto px-4 h-full flex items-end pb-8">
-          <div className="flex items-end space-x-6">
-            {/* Poster */}
-            <div className="relative animate-scale-in">
+        <div className="relative container mx-auto px-4 py-16">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+            <div className="lg:col-span-1">
+              <div className="card-3d animate-float">
               <img
-                src={anime.image || "/placeholder.svg"}
+                  src={anime.coverImage || "/placeholder.svg?height=600&width=400"}
                 alt={anime.title}
-                className="w-48 h-72 object-cover rounded-xl border-2 border-primary/30 shadow-2xl"
+                  className="w-full max-w-sm mx-auto rounded-xl shadow-2xl"
               />
+              </div>
             </div>
 
-            {/* Info */}
-            <div className="flex-1 text-white animate-slide-in-up" style={{ animationDelay: "0.2s" }}>
-              <h1 className="text-4xl md:text-6xl font-bold mb-4 text-interactive">{anime.title}</h1>
+            <div className="lg:col-span-2 space-y-6">
+              <div className="space-y-4">
+                <h1 className="text-4xl md:text-6xl font-bold bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent animate-gradient">
+                  {anime.title}
+                </h1>
 
-              <div className="flex items-center space-x-4 mb-4">
+                <div className="flex flex-wrap items-center gap-4 text-sm">
                 <div className="flex items-center space-x-1">
-                  <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
-                  <span className="font-semibold">{anime.rating}</span>
+                    <Star className="h-4 w-4 text-yellow-500" />
+                    <span>{anime.rating.toFixed(1)}</span>
                 </div>
-                <Badge variant="outline" className="text-white border-white/30">
-                  {anime.status}
-                </Badge>
-                <span>{anime.year}</span>
-                <span>{anime.episodes.length} episodes</span>
+                  <Badge variant="outline">{anime.status}</Badge>
+                  <Badge variant="outline">{anime.year}</Badge>
+                  <Badge variant="outline">{anime.episodes.length} Episodes</Badge>
               </div>
 
-              <div className="flex flex-wrap gap-2 mb-4">
+                <div className="flex flex-wrap gap-2">
                 {anime.genres.map((genre) => (
-                  <Badge key={genre} variant="secondary">
+                    <Badge key={genre} variant="secondary" className="genre-tag">
                     {genre}
                   </Badge>
                 ))}
               </div>
 
-              <p className="text-lg text-gray-200 mb-6 max-w-3xl leading-relaxed">{anime.synopsis}</p>
+                <p className="text-lg leading-relaxed text-muted-foreground max-w-3xl">
+                  {anime.synopsis}
+                </p>
+              </div>
 
               <div className="flex flex-wrap gap-4">
                 <Button 
                   size="lg" 
                   className="animate-pulse-glow"
                   onClick={() => anime.episodes[0] && handleEpisodeSelect(anime.episodes[0])}
+                  disabled={isLoadingEpisode}
                 >
                   <Play className="mr-2 h-5 w-5" />
-                  Watch Now
+                  {isLoadingEpisode ? "Loading..." : "Watch Now"}
                 </Button>
                 <Button
                   size="lg"
@@ -400,7 +456,7 @@ export default function AnimeDetailPage() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {anime.characters.map((character, i) => (
                     <div 
-                      key={character.id} 
+                      key={character.name} 
                       className="text-center animate-bounce-in cursor-pointer"
                       style={{ animationDelay: `${i * 0.1}s` }}
                       onClick={() => handleSwitchCharacter(character)}
@@ -441,15 +497,15 @@ export default function AnimeDetailPage() {
                     />
                   </div>
                     <h3 className="font-semibold">{currentCharacter.name}</h3>
-                    <p className="text-sm text-muted-foreground">{currentCharacter.status}</p>
+                    <p className="text-sm text-muted-foreground">{currentCharacter.description}</p>
                   </div>
 
                   <div className="flex flex-wrap gap-2 justify-center">
-                    {currentCharacter.personality.map((trait) => (
-                      <Badge key={trait} variant="outline" className="bg-primary/5">
-                        {trait}
+                    {currentCharacter.personality && (
+                      <Badge variant="outline" className="bg-primary/5">
+                        {currentCharacter.personality}
                       </Badge>
-                    ))}
+                    )}
                 </div>
 
                   <Button className="w-full" onClick={() => setIsChatOpen(true)}>
@@ -468,16 +524,24 @@ export default function AnimeDetailPage() {
       <CharacterChatPanel
         isOpen={isChatOpen}
         onClose={() => setIsChatOpen(false)}
-          character={currentCharacter}
-          onSwitchCharacter={() => setShowCharacterSwitcher(true)}
+          character={{
+            id: currentCharacter.name,
+            name: currentCharacter.name,
+            avatar: currentCharacter.avatar,
+            source: {
+              title: anime.title,
+              coverImage: anime.coverImage
+            }
+          }}
       />
       )}
 
       {/* Character Switcher */}
       {showCharacterSwitcher && (
       <CharacterSwitcher
-          characters={anime.characters}
-          onSelect={handleSwitchCharacter}
+          currentCharacter={currentCharacter?.name || ""}
+          onSwitch={handleSwitchCharacter}
+          isVisible={showCharacterSwitcher}
         onClose={() => setShowCharacterSwitcher(false)}
       />
       )}

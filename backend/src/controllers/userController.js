@@ -1,10 +1,11 @@
-import { userService } from "../services/userService.js"
+import { createUserService } from "../services/userService.js"
 
 export const userController = {
   // Get current user profile
   async getProfile(request, reply) {
     try {
       const userId = request.user.id
+      const userService = createUserService(request.server.prisma)
       const user = await userService.getUserById(userId)
 
       if (!user) {
@@ -36,6 +37,7 @@ export const userController = {
     try {
       const userId = request.user.id
       const { username, bio, avatar } = request.body
+      const userService = createUserService(request.server.prisma)
 
       const updatedUser = await userService.updateUser(userId, {
         username,
@@ -66,6 +68,7 @@ export const userController = {
     try {
       const userId = request.user.id
       const { status, page = 1, limit = 20 } = request.query
+      const userService = createUserService(request.server.prisma)
 
       const watchlist = await userService.getUserWatchlist(userId, {
         status,
@@ -80,11 +83,73 @@ export const userController = {
     }
   },
 
+  // Add anime to watchlist
+  async addToWatchlist(request, reply) {
+    try {
+      const userId = request.user.id
+      const { animeId } = request.params
+      const { status = "plan_to_watch" } = request.body
+      const userService = createUserService(request.server.prisma)
+
+      const watchlistItem = await userService.addToWatchlist(userId, animeId, status)
+
+      return {
+        success: true,
+        message: "Anime added to watchlist",
+        data: watchlistItem,
+      }
+    } catch (error) {
+      request.log.error("Add to watchlist error:", error)
+      return reply.code(500).send({ error: "Failed to add anime to watchlist" })
+    }
+  },
+
+  // Update watchlist item
+  async updateWatchlistItem(request, reply) {
+    try {
+      const userId = request.user.id
+      const { animeId } = request.params
+      const { status, rating } = request.body
+      const userService = createUserService(request.server.prisma)
+
+      const watchlistItem = await userService.updateWatchlistStatus(userId, animeId, status, rating)
+
+      return {
+        success: true,
+        message: "Watchlist item updated",
+        data: watchlistItem,
+      }
+    } catch (error) {
+      request.log.error("Update watchlist item error:", error)
+      return reply.code(500).send({ error: "Failed to update watchlist item" })
+    }
+  },
+
+  // Remove anime from watchlist
+  async removeFromWatchlist(request, reply) {
+    try {
+      const userId = request.user.id
+      const { animeId } = request.params
+      const userService = createUserService(request.server.prisma)
+
+      await userService.removeFromWatchlist(userId, animeId)
+
+      return {
+        success: true,
+        message: "Anime removed from watchlist",
+      }
+    } catch (error) {
+      request.log.error("Remove from watchlist error:", error)
+      return reply.code(500).send({ error: "Failed to remove anime from watchlist" })
+    }
+  },
+
   // Get user reading list
   async getReadingList(request, reply) {
     try {
       const userId = request.user.id
       const { status, page = 1, limit = 20 } = request.query
+      const userService = createUserService(request.server.prisma)
 
       const readingList = await userService.getUserReadingList(userId, {
         status,
@@ -103,6 +168,7 @@ export const userController = {
   async getStats(request, reply) {
     try {
       const userId = request.user.id
+      const userService = createUserService(request.server.prisma)
       const stats = await userService.getUserStats(userId)
       return stats
     } catch (error) {
@@ -115,6 +181,7 @@ export const userController = {
   async getAchievements(request, reply) {
     try {
       const userId = request.user.id
+      const userService = createUserService(request.server.prisma)
       const achievements = await userService.getUserAchievements(userId)
       return achievements
     } catch (error) {
@@ -127,6 +194,7 @@ export const userController = {
   async getProgress(request, reply) {
     try {
       const userId = request.user.id
+      const userService = createUserService(request.server.prisma)
       const progress = await userService.getUserProgress(userId)
       return progress
     } catch (error) {

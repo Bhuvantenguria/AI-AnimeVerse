@@ -11,10 +11,10 @@ export const config = {
   DATABASE_URL: process.env.DATABASE_URL,
 
   // Redis
-  REDIS_HOST: process.env.REDIS_HOST || "localhost",
-  REDIS_PORT: Number.parseInt(process.env.REDIS_PORT) || 6379,
-  REDIS_PASSWORD: process.env.REDIS_PASSWORD,
-  REDIS_URL: process.env.REDIS_URL,
+  REDIS_URL: process.env.REDIS_URL || null,
+  REDIS_HOST: process.env.REDIS_HOST || 'localhost',
+  REDIS_PORT: process.env.REDIS_PORT || 6379,
+  REDIS_PASSWORD: process.env.REDIS_PASSWORD || null,
 
   // JWT  
   JWT_SECRET: process.env.JWT_SECRET || "your-super-secret-jwt-key",

@@ -13,7 +13,13 @@ interface AnimeCardProps {
   image: string
   rating: number
   genre: string[]
-  episodes: number
+  episodes: Array<{
+    id: string
+    number: number
+    title: string
+    thumbnail: string
+    duration: number
+  }> | number
   status: "ongoing" | "completed"
   year: number
   className?: string
@@ -21,6 +27,9 @@ interface AnimeCardProps {
 
 export function AnimeCard({ id, title, image, rating, genre, episodes, status, year, className }: AnimeCardProps) {
   const [isHovered, setIsHovered] = useState(false)
+
+  // Handle both array and number formats for episodes
+  const episodeCount = Array.isArray(episodes) ? episodes.length : episodes
 
   return (
     <div
@@ -86,7 +95,7 @@ export function AnimeCard({ id, title, image, rating, genre, episodes, status, y
           ))}
         </div>
 
-        <p className="text-xs text-muted-foreground">{episodes} episodes</p>
+        <p className="text-xs text-muted-foreground">{episodeCount} episodes</p>
       </div>
     </div>
   )
