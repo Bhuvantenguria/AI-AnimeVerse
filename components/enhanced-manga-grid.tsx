@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
+import { useRouter } from "next/navigation"
 import api from "@/lib/api"
 
 interface Manga {
@@ -58,9 +59,15 @@ export function EnhancedMangaGrid({
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const { toast } = useToast()
+  const router = useRouter()
 
+  // Debounced search effect
   useEffect(() => {
-    loadManga(true)
+    const timeoutId = setTimeout(() => {
+      loadManga(true)
+    }, 300) // 300ms debounce
+
+    return () => clearTimeout(timeoutId)
   }, [searchQuery, selectedGenre, selectedStatus, selectedYear])
 
   const loadManga = async (reset = false) => {
@@ -70,7 +77,7 @@ export function EnhancedMangaGrid({
 
       const response = await api.getManga({
         page: currentPage,
-        limit: 20,
+        limit: 16, // Reduced from 20 to 16 for better performance
         search: searchQuery,
         genre: selectedGenre,
         status: selectedStatus,
@@ -133,6 +140,15 @@ export function EnhancedMangaGrid({
     }
   }
 
+  const handleMangaClick = (mangaItem: Manga) => {
+    router.push(`/manga/${mangaItem.malId}`)
+  }
+
+  const handleReadClick = (mangaItem: Manga, event: React.MouseEvent) => {
+    event.stopPropagation()
+    router.push(`/manga/${mangaItem.malId}/reader`)
+  }
+
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case "ongoing":
@@ -175,9 +191,12 @@ export function EnhancedMangaGrid({
             key={mangaItem.malId}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
+            transition={{ delay: Math.min(index * 0.05, 0.5) }} // Reduced delay for better performance
           >
-            <Card className="group overflow-hidden bg-gradient-to-br from-gray-900 to-gray-800 border-gray-700 hover:border-orange-500/50 transition-all duration-300">
+            <Card 
+              className="group overflow-hidden bg-gradient-to-br from-gray-900 to-gray-800 border-gray-700 hover:border-orange-500/50 transition-all duration-300 cursor-pointer"
+              onClick={() => handleMangaClick(mangaItem)}
+            >
               <div className="relative">
                 {/* Cover Image */}
                 <div className="aspect-[3/4] overflow-hidden">
@@ -185,6 +204,11 @@ export function EnhancedMangaGrid({
                     src={mangaItem.coverImage || "/placeholder.svg?height=400&width=300"}
                     alt={mangaItem.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    loading="lazy"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement
+                      target.src = "/placeholder.svg?height=400&width=300"
+                    }}
                   />
 
                   {/* Overlay */}
@@ -193,7 +217,11 @@ export function EnhancedMangaGrid({
                   {/* Action Buttons */}
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                     <div className="flex space-x-2">
-                      <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
+                      <Button 
+                        size="sm" 
+                        className="bg-orange-600 hover:bg-orange-700"
+                        onClick={(e) => handleReadClick(mangaItem, e)}
+                      >
                         <BookOpen className="w-4 h-4 mr-1" />
                         Read
                       </Button>
@@ -291,7 +319,19 @@ export function EnhancedMangaGrid({
       </div>
 
       {/* Loading */}
-      {loading && (
+      {loading && manga.length === 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {[...Array(8)].map((_, i) => (
+            <div key={i} className="animate-pulse">
+              <div className="bg-gray-700 aspect-[3/4] rounded-lg mb-4"></div>
+              <div className="h-4 bg-gray-700 rounded w-3/4 mb-2"></div>
+              <div className="h-3 bg-gray-700 rounded w-1/2"></div>
+            </div>
+          ))}
+        </div>
+      )}
+      
+      {loading && manga.length > 0 && (
         <div className="flex justify-center py-8">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500" />
         </div>

@@ -198,7 +198,7 @@ class ApiClient {
       const response = await this.request<StreamingResponse>(`/api/anime/${animeId}/episodes/${episodeId}/stream`)
 
       // Handle different streaming response types
-      if (response.type === "stream" && response.sources?.length > 0) {
+      if (response.type === "stream" && response.sources && response.sources.length > 0) {
         // Filter and sort sources by quality
         const sources = response.sources
           .filter(source => source.url && source.quality)
@@ -232,16 +232,44 @@ class ApiClient {
   }
 
   // Manga endpoints
+  async getManga(options: {
+    page?: number
+    limit?: number
+    search?: string
+    genre?: string
+    status?: string
+    year?: number
+  } = {}) {
+    const params = new URLSearchParams()
+    
+    if (options.search) params.append('search', options.search)
+    if (options.page) params.append('page', options.page.toString())
+    if (options.limit) params.append('limit', options.limit.toString())
+    if (options.genre && options.genre !== 'any') params.append('genre', options.genre)
+    if (options.status && options.status !== 'any') params.append('status', options.status)
+    if (options.year) params.append('year', options.year.toString())
+    
+    return this.request<MangaResponse>(`/api/manga?${params}`)
+  }
+
   async searchManga(query = "", page = 1) {
     const params = new URLSearchParams({
-      query,
+      search: query,
       page: page.toString(),
     })
-    return this.request<MangaResponse>(`/api/manga/search?${params}`)
+    return this.request<MangaResponse>(`/api/manga?${params}`)
   }
 
   async getMangaById(id: string) {
     return this.request(`/api/manga/${id}`)
+  }
+
+  async getMangaChapters(mangaId: string, page = 1, limit = 50) {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+    })
+    return this.request(`/api/manga/${mangaId}/chapters?${params}`)
   }
 
   async getChapterPages(mangaId: string, chapterId: string) {
@@ -304,10 +332,16 @@ class ApiClient {
     return this.request(`/api/user/reading-list?${params}`)
   }
 
-  async addToReadingList(mangaId: string) {
+  async addToReadingList(mangaId: string, status = "plan_to_read") {
     return this.request("/api/user/reading-list", {
       method: "POST",
-      body: JSON.stringify({ mangaId }),
+      body: JSON.stringify({ mangaId, status }),
+    })
+  }
+
+  async removeFromReadingList(mangaId: string) {
+    return this.request(`/api/user/reading-list/${mangaId}`, {
+      method: "DELETE",
     })
   }
 
