@@ -12,6 +12,7 @@ import { CharacterChatPanel } from "@/components/character-chat-panel"
 import { CharacterSwitcher } from "@/components/character-switcher"
 import { useToast } from "@/hooks/use-toast"
 import api from "@/lib/api"
+import { ThemeToggle } from '@/components/theme-toggle'
 
 interface Episode {
   id: string
@@ -30,6 +31,7 @@ interface StreamingSource {
 }
 
 interface StreamingResponse {
+  type: string
   sources: StreamingSource[]
   headers?: Record<string, string>
   subtitles?: Array<{
@@ -37,6 +39,8 @@ interface StreamingResponse {
     language: string
     url: string
   }>
+  url?: string
+  links?: Array<{ url: string; label: string }>
 }
 
 interface Character {
@@ -148,12 +152,18 @@ export default function AnimeDetailPage() {
     try {
       setIsLoadingEpisode(true)
       setStreamingData(null)
-      
       // Get streaming data using the proper episode ID
-      const streamData = await api.getEpisodeStream(anime!.id, episode.id)
-      
+      const streamDataRaw = await api.getEpisodeStream(anime!.id, episode.id)
+      // Ensure sources is always an array
+      const streamData: StreamingResponse = {
+        type: streamDataRaw.type,
+        sources: Array.isArray(streamDataRaw.sources) ? streamDataRaw.sources : [],
+        headers: streamDataRaw.headers,
+        subtitles: streamDataRaw.subtitles,
+        url: streamDataRaw.url,
+      }
       // Handle different streaming data types
-      if (streamData.type === "stream" && streamData.sources?.length > 0) {
+      if (streamData.type === "stream" && streamData.sources.length > 0) {
         // Direct streaming available
         const sources = streamData.sources
           .filter(source => source.url && source.quality)
@@ -162,34 +172,25 @@ export default function AnimeDetailPage() {
             const qualityB = parseInt(b.quality.replace(/[^\d]/g, '')) || 0
             return qualityB - qualityA
           })
-
         if (sources.length > 0) {
           const streamUrl = sources[0].url
-
-          // Update current episode with stream info
           setCurrentEpisode({
             ...episode,
             streamUrl
           })
-
-          // Store streaming data for quality selection
           setStreamingData(streamData)
-
-          // Update URL without navigation
           window.history.pushState({}, '', `/anime/${anime!.id}?episode=${episode.number}`)
         } else {
           throw new Error("No valid streaming sources found")
         }
       } else if (streamData.type === "embed" && streamData.url) {
-        // Embed streaming available
         setCurrentEpisode({
           ...episode,
           streamUrl: streamData.url
         })
         setStreamingData(streamData)
         window.history.pushState({}, '', `/anime/${anime!.id}?episode=${episode.number}`)
-      } else if (streamData.type === "fallback" && streamData.links?.length > 0) {
-        // Only fallback links available
+      } else if (streamData.type === "fallback" && Array.isArray(streamData.links) && streamData.links.length > 0) {
         setCurrentEpisode({
           ...episode,
           streamUrl: undefined // No direct stream URL
@@ -199,7 +200,6 @@ export default function AnimeDetailPage() {
       } else {
         throw new Error("No streaming sources available")
       }
-
     } catch (error) {
       console.error("Failed to get streaming URL:", error)
       toast({
@@ -269,7 +269,15 @@ export default function AnimeDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background/95 to-primary/5">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background/95 to-primary/10 dark:from-[#18122B] dark:via-[#393053]/80 dark:to-[#635985]/40 relative overflow-x-hidden">
+      {/* Animated background sparkles */}
+      <div className="pointer-events-none fixed inset-0 z-0 animate-float-sparkles opacity-30" />
+
+      {/* Theme Toggle Button (top right) */}
+      <div className="fixed top-4 right-4 z-20">
+        <ThemeToggle />
+      </div>
+
       {/* Anime Streaming Player */}
       {currentEpisode && streamingData && (
         <AnimeStreamingPlayer
@@ -278,7 +286,6 @@ export default function AnimeDetailPage() {
           episodeNumber={currentEpisode.number}
           episodeTitle={currentEpisode.title}
           sources={streamingData.sources}
-          streamingData={streamingData}
           onClose={() => {
             setCurrentEpisode(null)
             setStreamingData(null)
@@ -295,20 +302,20 @@ export default function AnimeDetailPage() {
       {/* Hero Section */}
       <div className="relative overflow-hidden">
         <div 
-          className="absolute inset-0 bg-cover bg-center opacity-20"
+          className="absolute inset-0 bg-cover bg-center opacity-20 animate-hero-fade"
           style={{ backgroundImage: `url(${anime.bannerImage || anime.coverImage})` }}
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-transparent dark:from-[#18122B] dark:via-[#393053]/80 dark:to-[#635985]/40" />
 
         <div className="relative container mx-auto px-4 py-16">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             <div className="lg:col-span-1">
-              <div className="card-3d animate-float">
-              <img
+              <div className="card-3d animate-float shadow-2xl bg-white/10 dark:bg-[#393053]/40 backdrop-blur rounded-2xl p-4">
+                <img
                   src={anime.coverImage || "/placeholder.svg?height=600&width=400"}
-                alt={anime.title}
-                  className="w-full max-w-sm mx-auto rounded-xl shadow-2xl"
-              />
+                  alt={anime.title}
+                  className="w-full max-w-sm mx-auto rounded-xl shadow-2xl animate-hero-img"
+                />
               </div>
             </div>
 
@@ -319,24 +326,24 @@ export default function AnimeDetailPage() {
                 </h1>
 
                 <div className="flex flex-wrap items-center gap-4 text-sm">
-                <div className="flex items-center space-x-1">
-                    <Star className="h-4 w-4 text-yellow-500" />
+                  <div className="flex items-center space-x-1">
+                    <Star className="h-4 w-4 text-yellow-500 animate-bounce" />
                     <span>{anime.rating.toFixed(1)}</span>
+                  </div>
+                  <Badge variant="outline" className="bg-white/10 dark:bg-[#393053]/40 border-primary/40 animate-badge-pop">{anime.status}</Badge>
+                  <Badge variant="outline" className="bg-white/10 dark:bg-[#393053]/40 border-primary/40 animate-badge-pop">{anime.year}</Badge>
+                  <Badge variant="outline" className="bg-white/10 dark:bg-[#393053]/40 border-primary/40 animate-badge-pop">{anime.episodes.length} Episodes</Badge>
                 </div>
-                  <Badge variant="outline">{anime.status}</Badge>
-                  <Badge variant="outline">{anime.year}</Badge>
-                  <Badge variant="outline">{anime.episodes.length} Episodes</Badge>
-              </div>
 
                 <div className="flex flex-wrap gap-2">
-                {anime.genres.map((genre) => (
-                    <Badge key={genre} variant="secondary" className="genre-tag">
-                    {genre}
-                  </Badge>
-                ))}
-              </div>
+                  {anime.genres.map((genre) => (
+                    <Badge key={genre} variant="secondary" className="genre-tag bg-gradient-to-r from-primary/30 to-accent/30 text-primary dark:text-accent-foreground animate-genre-bounce">
+                      {genre}
+                    </Badge>
+                  ))}
+                </div>
 
-                <p className="text-lg leading-relaxed text-muted-foreground max-w-3xl">
+                <p className="text-lg leading-relaxed text-muted-foreground max-w-3xl animate-fade-in">
                   {anime.synopsis}
                 </p>
               </div>
@@ -344,7 +351,7 @@ export default function AnimeDetailPage() {
               <div className="flex flex-wrap gap-4">
                 <Button 
                   size="lg" 
-                  className="animate-pulse-glow"
+                  className="animate-pulse-glow bg-gradient-to-r from-primary to-accent text-white shadow-lg hover:scale-105 transition-transform"
                   onClick={() => anime.episodes[0] && handleEpisodeSelect(anime.episodes[0])}
                   disabled={isLoadingEpisode}
                 >
@@ -354,21 +361,21 @@ export default function AnimeDetailPage() {
                 <Button
                   size="lg"
                   variant="outline"
-                  className="glass-morphism bg-transparent text-white border-white/30"
+                  className="glass-morphism bg-transparent text-white border-white/30 hover:bg-white/10 animate-fade-in"
                 >
                   <Plus className="mr-2 h-5 w-5" />
                   Add to List
                 </Button>
                 {currentCharacter && (
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="glass-morphism bg-transparent text-white border-white/30"
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="glass-morphism bg-transparent text-white border-white/30 hover:bg-white/10 animate-fade-in"
                     onClick={() => setIsChatOpen(true)}
-                >
-                  <MessageCircle className="mr-2 h-5 w-5" />
-                  Chat with {currentCharacter.name}
-                </Button>
+                  >
+                    <MessageCircle className="mr-2 h-5 w-5" />
+                    Chat with {currentCharacter.name}
+                  </Button>
                 )}
               </div>
             </div>
@@ -380,11 +387,11 @@ export default function AnimeDetailPage() {
       <div className="container mx-auto px-4 py-12">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
-            <Card className="animate-slide-in-up">
+            <Card className="animate-slide-in-up bg-white/10 dark:bg-[#393053]/40 backdrop-blur rounded-2xl shadow-xl">
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <Play className="h-5 w-5 text-primary" />
+                    <Play className="h-5 w-5 text-primary animate-bounce" />
                     <span>Episodes</span>
                   </div>
                   <div className="flex items-center space-x-4">
@@ -393,6 +400,7 @@ export default function AnimeDetailPage() {
                       size="sm"
                       onClick={handlePrevPage}
                       disabled={currentPage === 1}
+                      className="rounded-full border-primary/40"
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
@@ -404,6 +412,7 @@ export default function AnimeDetailPage() {
                       size="sm"
                       onClick={handleNextPage}
                       disabled={currentPage >= Math.ceil(anime.episodes.length / EPISODES_PER_PAGE)}
+                      className="rounded-full border-primary/40"
                     >
                       <ChevronRight className="h-4 w-4" />
                     </Button>
@@ -415,29 +424,22 @@ export default function AnimeDetailPage() {
                   {getCurrentPageEpisodes().map((episode) => (
                     <Card 
                       key={episode.id} 
-                      className={`card-3d cursor-pointer interactive-hover ${
-                        isLoadingEpisode && currentEpisode?.id === episode.id ? 'opacity-50' : ''
-                      } ${currentEpisode?.id === episode.id ? 'border-primary' : ''}`}
-                      onClick={() => !isLoadingEpisode && handleEpisodeSelect(episode)}
+                      className={`card-3d cursor-pointer interactive-hover bg-gradient-to-br from-primary/10 to-accent/10 dark:from-[#393053]/30 dark:to-[#18122B]/30 rounded-xl shadow-lg hover:scale-105 hover:shadow-2xl transition-all duration-300 animate-episode-card`}
+                      onClick={() => handleEpisodeSelect(episode)}
                     >
-                      <CardContent className="p-4">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-16 h-12 bg-muted rounded overflow-hidden">
-                            <img
-                              src={episode.thumbnail || "/placeholder.svg?height=48&width=64"}
-                              alt={`Episode ${episode.number}`}
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <h4 className="font-semibold">Episode {episode.number}</h4>
-                            <p className="text-sm text-muted-foreground">{episode.duration} min</p>
-                          </div>
-                          {currentEpisode?.id === episode.id && (
-                            <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-                          )}
+                      <div className="flex items-center gap-4 p-4">
+                        <img
+                          src={episode.thumbnail}
+                          alt={episode.title}
+                          className="w-20 h-20 object-cover rounded-lg shadow-md"
+                        />
+                        <div className="flex-1">
+                          <h3 className="text-lg font-bold text-primary dark:text-accent-foreground animate-fade-in">
+                            {episode.title}
+                          </h3>
+                          <p className="text-sm text-muted-foreground">Duration: {episode.duration} min</p>
                         </div>
-                      </CardContent>
+                      </div>
                     </Card>
                   ))}
                 </div>
