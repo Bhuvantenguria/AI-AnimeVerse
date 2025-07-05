@@ -2,6 +2,8 @@ import Fastify from "fastify"
 import cors from "@fastify/cors"
 import jwt from "@fastify/jwt"
 import websocket from "@fastify/websocket"
+import staticFiles from "@fastify/static"
+import path from "path"
 import { config } from "./config/env.js"
 import { gracefulShutdown } from "./utils/gracefulShutdown.js"
 
@@ -13,6 +15,7 @@ import jobQueuePlugin from "./plugins/jobQueue.js"
 import cloudinaryPlugin from "./plugins/cloudinary.js"
 import websocketPlugin from "./plugins/websocket.js"
 import loggerPlugin from "./plugins/logger.js"
+import redisPlugin from "./plugins/redis.js"
 
 // Import routes
 import animeRoutes from "./routes/animeRoutes.js"
@@ -61,10 +64,11 @@ await fastify.register(jwt, {
 // Register database and logger plugins
 await fastify.register(prismaPlugin)
 await fastify.register(loggerPlugin)
+// await fastify.register(redisPlugin) // Commented out - Redis not configured
 
 // Register service plugins
 await fastify.register(apiServicesPlugin)
-await fastify.register(jobQueuePlugin)
+// await fastify.register(jobQueuePlugin) // Commented out - depends on Redis
 await fastify.register(cloudinaryPlugin)
 
 // Register websocket plugins
@@ -75,6 +79,20 @@ await fastify.register(websocket, {
   },
 })
 await fastify.register(websocketPlugin)
+
+// Register static file serving for uploads
+await fastify.register(staticFiles, {
+  root: path.join(process.cwd(), 'uploads'),
+  prefix: '/uploads/',
+  setHeaders: (res, path, stat) => {
+    // Set proper headers for audio files
+    if (path.endsWith('.mp3') || path.endsWith('.wav') || path.endsWith('.m4a')) {
+      res.setHeader('Content-Type', 'audio/mpeg')
+      res.setHeader('Accept-Ranges', 'bytes')
+      res.setHeader('Cache-Control', 'public, max-age=3600')
+    }
+  }
+})
 
 // Register auth plugin after all dependencies
 await fastify.register(authPlugin)

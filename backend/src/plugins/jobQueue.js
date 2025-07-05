@@ -16,6 +16,7 @@ async function jobQueuePlugin(fastify, options) {
   const chatQueue = new Queue("chat", { connection })
   const syncQueue = new Queue("sync", { connection })
   const emailQueue = new Queue("email", { connection })
+  const narrationQueue = new Queue("narration", { connection })
 
   // Chat worker
   const chatWorker = new Worker("chat", async (job) => {
@@ -80,11 +81,55 @@ async function jobQueuePlugin(fastify, options) {
       return { sent: true }
   }, { connection })
 
+  // Narration worker
+  const narrationWorker = new Worker("narration", async (job) => {
+      const { requestId, userId, mangaId, chapterNumber, voiceType, language, speed, includeDialogue, includeNarration } = job.data
+
+      fastify.log.info(`🎙️ Processing narration job: ${job.id} for request: ${requestId}`)
+
+      try {
+        // Import and execute narration job
+        const { processNarrationJob } = await import("../../src/jobs/narrationJob.js")
+        
+        const result = await processNarrationJob({
+          requestId,
+          userId,
+          mangaId,
+          chapterNumber,
+          voiceType,
+          language,
+          speed,
+          includeDialogue,
+          includeNarration
+        }, fastify)
+
+        fastify.log.info(`✅ Narration job completed: ${job.id}`)
+        return result
+      } catch (error) {
+        fastify.log.error(`❌ Narration job failed: ${job.id}`, error)
+        throw error
+      }
+  }, { 
+    connection,
+    concurrency: 2, // Process 2 narration jobs concurrently
+    removeOnComplete: 10, // Keep 10 completed jobs
+    removeOnFail: 50 // Keep 50 failed jobs for debugging
+  })
+
   // Decorate fastify with queues
   fastify.decorate("jobQueue", {
     chat: chatQueue,
     sync: syncQueue,
     email: emailQueue,
+    narration: narrationQueue,
+  })
+
+  // Also add as 'queues' for backward compatibility
+  fastify.decorate("queues", {
+    chat: chatQueue,
+    sync: syncQueue,
+    email: emailQueue,
+    narration: narrationQueue,
   })
 
   // Graceful shutdown
@@ -92,9 +137,11 @@ async function jobQueuePlugin(fastify, options) {
     await chatWorker.close()
     await syncWorker.close()
     await emailWorker.close()
+    await narrationWorker.close()
     await chatQueue.close()
     await syncQueue.close()
     await emailQueue.close()
+    await narrationQueue.close()
   })
 
   fastify.log.info("📬 Job queue plugin registered")
