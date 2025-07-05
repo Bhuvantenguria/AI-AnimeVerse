@@ -146,7 +146,7 @@ export function EnhancedMangaGrid({
 
   const handleReadClick = (mangaItem: Manga, event: React.MouseEvent) => {
     event.stopPropagation()
-    router.push(`/manga/${mangaItem.malId}/reader`)
+    router.push(`/manga/${mangaItem.malId}`)
   }
 
   const getStatusColor = (status: string) => {

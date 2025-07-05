@@ -81,12 +81,12 @@ export default async function searchRoutes(fastify, options) {
           )
         }
 
-        if (source === "all" || source === "mangadx") {
+        if (source === "all" || source === "mangadex") {
           mangaPromises.push(
             fastify.apiServices.mangaDex
               .searchManga(query, limit)
-              .then((data) => ({ source: "mangadx", data }))
-              .catch((err) => ({ source: "mangadx", error: err.message })),
+              .then((data) => ({ source: "mangadex", data }))
+              .catch((err) => ({ source: "mangadex", error: err.message })),
           )
         }
 
@@ -358,9 +358,9 @@ function transformSearchResults(data, source, type) {
         }
       })
 
-    case "mangadx":
-      const mangadxItems = data.data || []
-      return mangadxItems.map((item) => {
+    case "mangadex":
+      const mangadexItems = data.data || []
+      return mangadexItems.map((item) => {
         const attrs = item.attributes
         return {
           id: `${source}-${item.id}`,
@@ -376,7 +376,7 @@ function transformSearchResults(data, source, type) {
           chapters: null,
           source,
           type,
-          mangadxId: item.id,
+          mangadexId: item.id,
         }
       })
 

@@ -105,9 +105,9 @@ async function syncMangaData(externalId, source, fastify) {
         characters = transformJikanCharacters(jikanData.characters)
         break
 
-      case "mangadx":
-        const mangadxData = await fastify.apiServices.mangaDex.getMangaById(externalId)
-        mangaData = transformMangaDexManga(mangadxData.data)
+      case "mangadex":
+        const mangadexData = await fastify.apiServices.mangaDex.getMangaById(externalId)
+        mangaData = transformMangaDexManga(mangadexData.data)
         break
 
       default:
@@ -153,7 +153,7 @@ async function syncMangaData(externalId, source, fastify) {
     }
 
     // Sync chapters if from MangaDex
-    if (source === "mangadx") {
+    if (source === "mangadex") {
       const chaptersData = await fastify.apiServices.mangaDex.getMangaChapters(externalId)
       for (const chapterData of chaptersData.data) {
         const chapter = transformMangaDexChapter(chapterData)

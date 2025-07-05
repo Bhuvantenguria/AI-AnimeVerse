@@ -74,7 +74,7 @@ model Manga {
   id          String   @id @default(cuid())
   malId       Int?     @unique
   anilistId   Int?
-  mangadxId   String?
+  mangadexId   String?
   title       String
   titleJp     String?
   synopsis    String?

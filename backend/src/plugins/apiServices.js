@@ -8,7 +8,7 @@ async function apiServicesPlugin(fastify, options) {
   const rateLimiter = {
     jikan: { lastCall: 0, minInterval: config.JIKAN_RATE_LIMIT },
     kitsu: { lastCall: 0, minInterval: config.KITSU_RATE_LIMIT },
-    mangadx: { lastCall: 0, minInterval: config.MANGADX_RATE_LIMIT },
+    mangadex: { lastCall: 0, minInterval: config.mangadex_RATE_LIMIT },
     anilist: { lastCall: 0, minInterval: config.ANILIST_RATE_LIMIT },
     animechan: { lastCall: 0, minInterval: 1000 },
   }
@@ -327,35 +327,35 @@ async function apiServicesPlugin(fastify, options) {
     baseUrl: config.MANGADEX_API_URL,
 
     async searchManga(title, limit = 20, offset = 0) {
-      await waitForRateLimit("mangadx")
+      await waitForRateLimit("mangadex")
       const response = await axios.get(`${this.baseUrl}/manga?title=${encodeURIComponent(title)}&limit=${limit}&offset=${offset}`)
       if (!response.ok) throw new Error(`MangaDex API error: ${response.status}`)
       return await response.json()
     },
 
     async getPopularManga(limit = 20, offset = 0) {
-      await waitForRateLimit("mangadx")
+      await waitForRateLimit("mangadex")
       const response = await axios.get(`${this.baseUrl}/manga?order[followedCount]=desc&limit=${limit}&offset=${offset}`)
       if (!response.ok) throw new Error(`MangaDex API error: ${response.status}`)
       return await response.json()
     },
 
     async getMangaById(id) {
-      await waitForRateLimit("mangadx")
+      await waitForRateLimit("mangadex")
       const response = await axios.get(`${this.baseUrl}/manga/${id}`)
       if (!response.ok) throw new Error(`MangaDex API error: ${response.status}`)
       return await response.json()
     },
 
     async getMangaChapters(mangaId, limit = 50, offset = 0) {
-      await waitForRateLimit("mangadx")
+      await waitForRateLimit("mangadex")
       const response = await axios.get(`${this.baseUrl}/manga/${mangaId}/feed?limit=${limit}&offset=${offset}&order[chapter]=desc`)
       if (!response.ok) throw new Error(`MangaDex API error: ${response.status}`)
       return await response.json()
     },
 
     async getChapterPages(chapterId) {
-      await waitForRateLimit("mangadx")
+      await waitForRateLimit("mangadex")
       const response = await axios.get(`${this.baseUrl}/at-home/server/${chapterId}`)
       if (!response.ok) throw new Error(`MangaDex API error: ${response.status}`)
       return await response.json()
@@ -858,7 +858,7 @@ async function apiServicesPlugin(fastify, options) {
     kitsu: kitsuService,
     anilist: aniListService,
     animeChan: animeChanService,
-    mangaDx: mangaDexService,
+    mangadex: mangaDexService,
     consumet: streamingService, // Updated to use new streaming service
     streaming: streamingService, // New dedicated streaming service
   }

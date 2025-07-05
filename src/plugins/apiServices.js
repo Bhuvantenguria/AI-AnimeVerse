@@ -225,7 +225,7 @@ async function apiServicesPlugin(fastify, options) {
   // MangaDex API service
   const mangaDexService = {
     async searchManga(title, limit = 20) {
-      await waitForRateLimit("mangadx")
+      await waitForRateLimit("mangadex")
       try {
         const response = await mangaDexAPI.get("/manga", {
           params: {
@@ -243,7 +243,7 @@ async function apiServicesPlugin(fastify, options) {
     },
 
     async getMangaById(id) {
-      await waitForRateLimit("mangadx")
+      await waitForRateLimit("mangadex")
       try {
         const response = await mangaDexAPI.get(`/manga/${id}`, {
           params: {
@@ -258,7 +258,7 @@ async function apiServicesPlugin(fastify, options) {
     },
 
     async getMangaChapters(mangaId, limit = 100) {
-      await waitForRateLimit("mangadx")
+      await waitForRateLimit("mangadex")
       try {
         const response = await mangaDexAPI.get("/chapter", {
           params: {
@@ -276,7 +276,7 @@ async function apiServicesPlugin(fastify, options) {
     },
 
     async getChapterPages(chapterId) {
-      await waitForRateLimit("mangadx")
+      await waitForRateLimit("mangadex")
       try {
         const response = await mangaDexAPI.get(`/at-home/server/${chapterId}`)
         return response.data

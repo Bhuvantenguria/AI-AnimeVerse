@@ -32,7 +32,7 @@ export const config = {
   JIKAN_RATE_LIMIT: 1000, // 1 second
   KITSU_RATE_LIMIT: 500, // 0.5 seconds
   ANILIST_RATE_LIMIT: 200, // 0.2 seconds
-  MANGADX_RATE_LIMIT: 200, // 0.2 seconds
+  mangadex_RATE_LIMIT: 200, // 0.2 seconds
 
   // API URLs
   JIKAN_API_URL: process.env.JIKAN_API_URL || "https://api.jikan.moe/v4",

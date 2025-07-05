@@ -13,7 +13,7 @@ A modern, full-stack platform for anime and manga enthusiasts with AI-powered fe
 - **Real-time Notifications**: Stay updated with the latest activities
 
 ### Technical Features
-- **Multi-API Integration**: Jikan, AniList, Kitsu, MangaDx, AnimeChan APIs
+- **Multi-API Integration**: Jikan, AniList, Kitsu, mangadex, AnimeChan APIs
 - **Real-time Communication**: WebSocket support for live chat and notifications
 - **Background Jobs**: Queue system for data synchronization and processing
 - **Image Management**: Cloudinary integration for media handling
@@ -185,7 +185,7 @@ The platform integrates with multiple anime/manga APIs:
 - **Jikan API**: MyAnimeList data
 - **AniList GraphQL**: Comprehensive anime/manga database
 - **Kitsu API**: Additional anime/manga data
-- **MangaDx API**: Manga chapters and reading
+- **mangadex API**: Manga chapters and reading
 - **AnimeChan API**: Anime quotes
 
 ### Real-time Features
@@ -264,7 +264,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Jikan API](https://jikan.moe/) for MyAnimeList data
 - [AniList](https://anilist.co/) for comprehensive anime/manga database
 - [Kitsu](https://kitsu.io/) for additional anime data
-- [MangaDx](https://mangadx.org/) for manga content
+- [mangadex](https://mangadex.org/) for manga content
 - [AnimeChan](https://animechan.xyz/) for anime quotes
 
 ## 📞 Support
@@ -276,7 +276,7 @@ This is a complete, production-ready MangaVerse platform with:
 
 ✅ **Backend**: Fastify + Prisma + PostgreSQL + Redis  
 ✅ **Frontend**: Next.js + React + TailwindCSS  
-✅ **APIs**: Jikan, AniList, Kitsu, MangaDx, AnimeChan integration  
+✅ **APIs**: Jikan, AniList, Kitsu, mangadex, AnimeChan integration  
 ✅ **Features**: Authentication, search, tracking, real-time chat  
 ✅ **Database**: Complete schema with all relationships  
 ✅ **Deployment**: Ready for production deployment  

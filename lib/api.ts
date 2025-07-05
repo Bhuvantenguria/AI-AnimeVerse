@@ -242,7 +242,7 @@ class ApiClient {
   } = {}) {
     const params = new URLSearchParams()
     
-    if (options.search) params.append('search', options.search)
+    if (options.search) params.append('q', options.search)
     if (options.page) params.append('page', options.page.toString())
     if (options.limit) params.append('limit', options.limit.toString())
     if (options.genre && options.genre !== 'any') params.append('genre', options.genre)
@@ -254,7 +254,7 @@ class ApiClient {
 
   async searchManga(query = "", page = 1) {
     const params = new URLSearchParams({
-      search: query,
+      q: query,
       page: page.toString(),
     })
     return this.request<MangaResponse>(`/api/manga?${params}`)
@@ -274,6 +274,10 @@ class ApiClient {
 
   async getChapterPages(mangaId: string, chapterId: string) {
     return this.request(`/api/manga/${mangaId}/chapters/${chapterId}/pages`)
+  }
+
+  async getChapterContent(mangaId: string, chapterNumber: string) {
+    return this.request(`/api/manga/${mangaId}/chapters/${chapterNumber}`)
   }
 
   // User endpoints
