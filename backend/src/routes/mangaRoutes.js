@@ -143,7 +143,12 @@ export default async function mangaRoutes(fastify, options) {
   // Get manga chapters
   fastify.get("/:id/chapters", async (request, reply) => {
     const { id } = request.params
-    const { page = 1, limit = 50 } = request.query
+    const { page = 1, limit = 100 } = request.query // Increased default limit
+
+    console.log('📖 CHAPTERS REQUEST:')
+    console.log('  - Manga ID:', id)
+    console.log('  - Page:', page)
+    console.log('  - Limit:', limit)
 
     try {
       const response = await axios.get(`${BASE_URL}/chapter`, {
@@ -151,10 +156,17 @@ export default async function mangaRoutes(fastify, options) {
           manga: id,
           translatedLanguage: ['en'],
           order: { chapter: 'asc' },
-          limit: Math.min(limit, 500),
-          offset: (page - 1) * limit
+          limit: Math.min(limit, 500), // Allow up to 500 chapters
+          offset: (page - 1) * limit,
+          includes: ['scanlation_group']
         }
       })
+      
+      console.log('✅ MANGADX CHAPTERS RESPONSE:')
+      console.log('  - Status Code:', response.status)
+      console.log('  - Chapters Found:', response.data?.data?.length || 0)
+      console.log('  - Total Available:', response.data?.total || 0)
+      console.log('  - Has Next Page:', response.data.offset + response.data.limit < response.data.total)
       
       return {
         data: response.data.data,
@@ -166,6 +178,7 @@ export default async function mangaRoutes(fastify, options) {
         }
       }
     } catch (error) {
+      console.error('❌ CHAPTERS FETCH ERROR:', error.response?.data || error.message)
       fastify.log.error("Failed to get manga chapters:", error)
       return reply.code(500).send({ error: "Failed to fetch manga chapters" })
     }
@@ -175,7 +188,14 @@ export default async function mangaRoutes(fastify, options) {
   fastify.get("/:id/chapters/:chapterNumber", async (request, reply) => {
     const { id, chapterNumber } = request.params
 
+    console.log('📄 CHAPTER CONTENT REQUEST:')
+    console.log('  - Manga ID:', id)
+    console.log('  - Chapter Number:', chapterNumber)
+
     try {
+      console.log('📡 MANGADX API REQUEST (Finding Chapter):', `${BASE_URL}/chapter`)
+      console.log('   Params:', { manga: id, chapter: chapterNumber, translatedLanguage: ['en'], limit: 10 })
+      
       // First, get the chapter by manga ID and chapter number
       const chaptersResponse = await axios.get(`${BASE_URL}/chapter`, {
         params: {
@@ -186,7 +206,19 @@ export default async function mangaRoutes(fastify, options) {
         }
       })
 
+      console.log('✅ MANGADX CHAPTERS SEARCH RESPONSE:')
+      console.log('  - Status Code:', chaptersResponse.status)
+      console.log('  - Chapters Found:', chaptersResponse.data?.data?.length || 0)
+      console.log('  - All Chapters:', chaptersResponse.data?.data?.map(ch => ({
+        id: ch.id,
+        chapter: ch.attributes.chapter,
+        title: ch.attributes.title,
+        pages: ch.attributes.pages,
+        externalUrl: ch.attributes.externalUrl
+      })) || [])
+
       if (!chaptersResponse.data?.data || chaptersResponse.data.data.length === 0) {
+        console.log('❌ No chapters found for this manga/chapter combination')
         return reply.code(404).send({ error: 'Chapter not found' })
       }
 
@@ -314,4 +346,321 @@ export default async function mangaRoutes(fastify, options) {
       return reply.code(500).send({ error: "Failed to fetch top manga" })
     }
   })
+
+  // Request manga narration
+  fastify.post("/:id/narrate", async (request, reply) => {
+    const { id } = request.params
+    const { 
+      chapterNumber, 
+      voiceType = 'narrator', 
+      language = 'en',
+      speed = 1.0,
+      includeDialogue = true,
+      includeNarration = true 
+    } = request.body
+
+    console.log('🔊 MANGA NARRATION REQUEST:')
+    console.log('  - Manga ID:', id)
+    console.log('  - Chapter:', chapterNumber)
+    console.log('  - Voice Type:', voiceType)
+    console.log('  - Language:', language)
+
+    try {
+      // Get manga details
+      const mangaResponse = await axios.get(`${BASE_URL}/manga/${id}`, {
+        params: {
+          includes: ['cover_art', 'author', 'artist']
+        }
+      })
+      
+      if (!mangaResponse.data?.data) {
+        return reply.code(404).send({ error: "Manga not found" })
+      }
+
+      const manga = mangaResponse.data.data
+      
+      // Get chapter content
+      const chapterResponse = await axios.get(`${BASE_URL}/chapter`, {
+        params: {
+          manga: id,
+          chapter: chapterNumber,
+          translatedLanguage: [language],
+          limit: 1
+        }
+      })
+
+      if (!chapterResponse.data?.data || chapterResponse.data.data.length === 0) {
+        return reply.code(404).send({ error: "Chapter not found" })
+      }
+
+      const chapter = chapterResponse.data.data[0]
+
+      // Create narration request
+      const narrationRequest = {
+        id: `narration_${Date.now()}`,
+        mangaId: id,
+        mangaTitle: manga.attributes.title?.en || Object.values(manga.attributes.title || {})[0],
+        chapterNumber: chapterNumber,
+        chapterTitle: chapter.attributes.title || `Chapter ${chapterNumber}`,
+        voiceType,
+        language,
+        speed,
+        includeDialogue,
+        includeNarration,
+        status: 'processing',
+        createdAt: new Date().toISOString()
+      }
+
+      // In a real implementation, you would:
+      // 1. Add to narration job queue
+      // 2. Process manga pages with OCR to extract text
+      // 3. Generate audio using TTS service
+      // 4. Store the audio file
+      
+      // For now, simulate the process
+      console.log('✅ Narration request created:', narrationRequest.id)
+      
+      return {
+        requestId: narrationRequest.id,
+        status: 'processing',
+        manga: {
+          id: manga.id,
+          title: narrationRequest.mangaTitle,
+          chapter: narrationRequest.chapterNumber,
+          chapterTitle: narrationRequest.chapterTitle
+        },
+        settings: {
+          voiceType,
+          language,
+          speed,
+          includeDialogue,
+          includeNarration
+        },
+        estimatedTime: '2-5 minutes',
+        message: 'Narration generation started. You will be notified when ready.'
+      }
+    } catch (error) {
+      console.error('❌ NARRATION REQUEST ERROR:', error)
+      fastify.log.error("Narration request error:", error)
+      return reply.code(500).send({ 
+        error: "Failed to request narration",
+        message: error.message || "An unexpected error occurred"
+      })
+    }
+  })
+
+  // Get narration status
+  fastify.get("/narration/:requestId", async (request, reply) => {
+    const { requestId } = request.params
+
+    try {
+      // In a real implementation, you would check the database/cache for request status
+      // For now, simulate different statuses
+      const mockStatus = {
+        requestId,
+        status: 'completed', // or 'processing', 'failed'
+        audioUrl: '/api/audio/sample-narration.mp3', // Mock audio URL
+        duration: 180, // 3 minutes
+        createdAt: new Date().toISOString(),
+        completedAt: new Date().toISOString()
+      }
+
+      return mockStatus
+    } catch (error) {
+      fastify.log.error("Get narration status error:", error)
+      return reply.code(500).send({ error: "Failed to get narration status" })
+    }
+  })
+
+  // Get available voices
+  fastify.get("/voices", async (request, reply) => {
+    try {
+      const voices = [
+        {
+          id: 'narrator-male',
+          name: 'Male Narrator',
+          type: 'narrator',
+          gender: 'male',
+          language: 'en',
+          description: 'Professional male narrator voice'
+        },
+        {
+          id: 'narrator-female',
+          name: 'Female Narrator',
+          type: 'narrator',
+          gender: 'female',
+          language: 'en',
+          description: 'Professional female narrator voice'
+        },
+        {
+          id: 'character-young-male',
+          name: 'Young Male Character',
+          type: 'character',
+          gender: 'male',
+          language: 'en',
+          description: 'Young male character voice'
+        },
+        {
+          id: 'character-young-female',
+          name: 'Young Female Character',
+          type: 'character',
+          gender: 'female',
+          language: 'en',
+          description: 'Young female character voice'
+        },
+        {
+          id: 'character-old-male',
+          name: 'Elder Male Character',
+          type: 'character',
+          gender: 'male',
+          language: 'en',
+          description: 'Wise elder male voice'
+        }
+      ]
+
+      return {
+        voices,
+        defaultVoice: 'narrator-male',
+        supportedLanguages: ['en', 'ja', 'es', 'fr', 'de']
+      }
+    } catch (error) {
+      fastify.log.error("Get voices error:", error)
+      return reply.code(500).send({ error: "Failed to get available voices" })
+    }
+  })
+
+  // Start manga chat session
+  fastify.post("/:id/chat", async (request, reply) => {
+    const { id } = request.params
+    const { chapterNumber, context } = request.body
+
+    console.log('💬 MANGA CHAT SESSION REQUEST:')
+    console.log('  - Manga ID:', id)
+    console.log('  - Chapter:', chapterNumber)
+    console.log('  - Context:', context)
+
+    try {
+      // Get manga details
+      const mangaResponse = await axios.get(`${BASE_URL}/manga/${id}`, {
+        params: {
+          includes: ['cover_art', 'author', 'artist']
+        }
+      })
+      
+      if (!mangaResponse.data?.data) {
+        return reply.code(404).send({ error: "Manga not found" })
+      }
+
+      const manga = mangaResponse.data.data
+      const mangaTitle = manga.attributes.title?.en || Object.values(manga.attributes.title || {})[0]
+
+      // Create chat session
+      const chatSession = {
+        id: `manga_chat_${Date.now()}`,
+        mangaId: id,
+        mangaTitle,
+        chapterNumber,
+        character: {
+          id: 'manga-expert',
+          name: 'Manga Expert',
+          avatar: '/placeholder.svg?height=50&width=50',
+          description: `Expert on ${mangaTitle} - ready to explain panels, characters, and story elements!`,
+          personality: ['Knowledgeable', 'Helpful', 'Enthusiastic', 'Patient']
+        },
+        context: context || {},
+        createdAt: new Date().toISOString(),
+        welcomeMessage: `Hello! I'm here to help you understand ${mangaTitle}${chapterNumber ? ` Chapter ${chapterNumber}` : ''}. Feel free to ask me about any panels, characters, plot points, or anything else you'd like to know! 📚✨`
+      }
+
+      console.log('✅ Chat session created:', chatSession.id)
+
+      return {
+        sessionId: chatSession.id,
+        character: chatSession.character,
+        manga: {
+          id: manga.id,
+          title: mangaTitle,
+          chapter: chapterNumber
+        },
+        welcomeMessage: chatSession.welcomeMessage,
+        context: chatSession.context
+      }
+    } catch (error) {
+      console.error('❌ CHAT SESSION ERROR:', error)
+      fastify.log.error("Chat session error:", error)
+      return reply.code(500).send({ 
+        error: "Failed to create chat session",
+        message: error.message || "An unexpected error occurred"
+      })
+    }
+  })
+
+  // Send message to manga chat
+  fastify.post("/chat/:sessionId/message", async (request, reply) => {
+    const { sessionId } = request.params
+    const { message, panelNumber, pageNumber } = request.body
+
+    console.log('💬 MANGA CHAT MESSAGE:')
+    console.log('  - Session ID:', sessionId)
+    console.log('  - Message:', message)
+    console.log('  - Panel:', panelNumber)
+    console.log('  - Page:', pageNumber)
+
+    try {
+      // In a real implementation, you would:
+      // 1. Validate session exists
+      // 2. Get manga context and current chapter
+      // 3. Use AI to generate contextual response
+      // 4. Store conversation history
+      
+      // For now, simulate AI response
+      const aiResponse = generateMangaChatResponse(message, {
+        sessionId,
+        panelNumber,
+        pageNumber
+      })
+
+      const response = {
+        id: `msg_${Date.now()}`,
+        sessionId,
+        message: aiResponse,
+        timestamp: new Date().toISOString(),
+        type: 'assistant'
+      }
+
+      return response
+    } catch (error) {
+      console.error('❌ CHAT MESSAGE ERROR:', error)
+      fastify.log.error("Chat message error:", error)
+      return reply.code(500).send({ 
+        error: "Failed to send message",
+        message: error.message || "An unexpected error occurred"
+      })
+    }
+  })
+}
+
+// Helper function to generate manga chat responses
+function generateMangaChatResponse(message, context) {
+  const lowerMessage = message.toLowerCase()
+  
+  // Context-aware responses based on message content
+  if (lowerMessage.includes('panel') || lowerMessage.includes('scene')) {
+    return `I can see you're asking about a specific panel! ${context.panelNumber ? `Looking at panel ${context.panelNumber}` : 'If you can point me to which panel you mean'}, I can explain the artistic techniques, story significance, or character emotions shown. What specifically would you like to know about this scene?`
+  }
+  
+  if (lowerMessage.includes('character')) {
+    return `Character analysis is one of my favorites! I can explain character motivations, relationships, development arcs, and how they're portrayed visually in the manga. Which character are you curious about?`
+  }
+  
+  if (lowerMessage.includes('story') || lowerMessage.includes('plot')) {
+    return `Great question about the story! I can help explain plot points, foreshadowing, themes, and how this chapter fits into the larger narrative. What aspect of the story would you like me to clarify?`
+  }
+  
+  if (lowerMessage.includes('art') || lowerMessage.includes('draw')) {
+    return `The artwork in manga is so important for storytelling! I can discuss artistic techniques, panel composition, visual metaphors, and how the art style contributes to the mood and narrative. What artistic element caught your attention?`
+  }
+  
+  // General helpful response
+  return `That's an interesting question! I'm here to help you understand every aspect of this manga - from character motivations and plot developments to artistic techniques and cultural references. Could you be more specific about what you'd like to know? You can ask about specific panels, characters, story elements, or anything else! 📚✨`
 }

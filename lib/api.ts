@@ -280,6 +280,11 @@ class ApiClient {
     return this.request(`/api/manga/${mangaId}/chapters/${chapterNumber}`)
   }
 
+  // Get chapter pages by chapter ID (direct MangaDx API style)
+  async getChapterPagesById(chapterId: string) {
+    return this.request(`/api/manga/chapter/${chapterId}/pages`)
+  }
+
   // User endpoints
   async getProfile() {
     return this.request("/api/user/profile")
@@ -367,6 +372,43 @@ class ApiClient {
 
   async getUserProgress() {
     return this.request("/api/user/progress")
+  }
+
+  // Manga narration endpoints
+  async requestMangaNarration(mangaId: string, chapterNumber: string, options: {
+    voiceType?: string;
+    language?: string;
+    speed?: number;
+    includeDialogue?: boolean;
+    includeNarration?: boolean;
+  } = {}) {
+    return this.request(`/api/manga/${mangaId}/narrate`, {
+      method: "POST",
+      body: JSON.stringify({ chapterNumber, ...options }),
+    })
+  }
+
+  async getMangaNarrationStatus(requestId: string) {
+    return this.request(`/api/manga/narration/${requestId}`)
+  }
+
+  async getAvailableVoices() {
+    return this.request("/api/manga/voices")
+  }
+
+  // Manga chat endpoints
+  async startMangaChatSession(mangaId: string, chapterNumber?: string, context?: any) {
+    return this.request(`/api/manga/${mangaId}/chat`, {
+      method: "POST",
+      body: JSON.stringify({ chapterNumber, context }),
+    })
+  }
+
+  async sendMangaChatMessage(sessionId: string, message: string, panelNumber?: number, pageNumber?: number) {
+    return this.request(`/api/manga/chat/${sessionId}/message`, {
+      method: "POST",
+      body: JSON.stringify({ message, panelNumber, pageNumber }),
+    })
   }
 }
 

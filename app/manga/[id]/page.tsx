@@ -50,7 +50,7 @@ interface Character {
   personality: string
 }
 
-const CHAPTERS_PER_PAGE = 12
+const CHAPTERS_PER_PAGE = 50
 
 export default function MangaDetailPage() {
   const params = useParams()
