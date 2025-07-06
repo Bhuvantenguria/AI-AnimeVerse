@@ -11,7 +11,7 @@ import { AnimeCard } from "@/components/anime-card"
 import { MangaCard } from "@/components/manga-card"
 import { CharacterChatLauncher } from "@/components/character-chat-launcher"
 import { ThreeScene } from "@/components/three-scene"
-import { dashboardAPI, animeAPI, mangaAPI } from "@/lib/api"
+import { animeAPI, mangaAPI, dashboardAPI } from "@/lib/api"
 import { useAuth } from "@/components/auth-provider"
 import { Play, BookOpen, MessageCircle, Trophy, Users, Sparkles, TrendingUp, Star, ArrowRight } from "lucide-react"
 

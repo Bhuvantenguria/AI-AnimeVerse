@@ -10,16 +10,29 @@ import Image from 'next/image'
 import Link from 'next/link'
 
 interface Page {
-  number: number
-  url: string
-  filename: string
+  page: number
+  image: string
+  width?: number
+  height?: number
+  // Legacy support
+  number?: number
+  url?: string
+  filename?: string
 }
 
 interface ChapterData {
-  chapter: string
-  title?: string
+  chapter: {
+    id: string
+    number: string
+    title: string
+    pages: number
+  }
   pages: Page[]
-  total: number
+  cdnReady?: boolean
+  selfHostedOnly?: boolean
+  // Legacy support
+  title?: string
+  total?: number
   source?: string
   externalUrl?: string
   message?: string
@@ -156,7 +169,7 @@ export default function MangaReaderPage() {
   }, [mangaId, chapter])
 
   const nextPage = () => {
-    if (chapterData && currentPage < chapterData.total) {
+    if (chapterData && currentPage < (chapterData.pages?.length || 0)) {
       setCurrentPage(currentPage + 1)
     }
   }
@@ -250,20 +263,20 @@ export default function MangaReaderPage() {
               {/* Chapter Title - Responsive */}
               <div className="text-center hidden sm:block">
                 <h2 className={`text-lg md:text-xl font-bold bg-gradient-to-r ${currentTheme.accent} bg-clip-text text-transparent`}>
-                  {chapterData.title || `Chapter ${chapterData.chapter}`}
+                  {chapterData.chapter?.title || `Chapter ${chapterData.chapter?.number || chapter}`}
                 </h2>
                 <div className={`${currentTheme.textSecondary} text-xs md:text-sm`}>
                   {chapterData.source === 'external' ? 
                     'External Chapter' : 
                     `${chapterData.pages?.length || 0} pages`
-                  } • {chapterData.source || 'MangaDx'}
+                  } • {chapterData.source || 'mangadex'}
                 </div>
               </div>
 
               {/* Mobile Chapter Info */}
               <div className="text-center sm:hidden">
                 <h2 className={`text-sm font-bold bg-gradient-to-r ${currentTheme.accent} bg-clip-text text-transparent`}>
-                  Ch. {chapterData.chapter}
+                  Ch. {chapterData.chapter?.number || chapter}
                 </h2>
                 <div className={`${currentTheme.textSecondary} text-xs`}>
                   {chapterData.source === 'external' ? 'External' : `${chapterData.pages?.length || 0}p`}
@@ -305,12 +318,12 @@ export default function MangaReaderPage() {
                   {readingMode === 'single' && (
                     <div className="text-center hidden lg:block">
                       <div className={`${currentTheme.text} text-sm font-medium`}>
-                        Page {currentPage} of {chapterData.total}
+                        Page {currentPage} of {chapterData.pages?.length || 0}
                       </div>
                       <div className={`w-16 h-1 ${currentTheme.border} rounded-full mt-1`}>
                         <div 
                           className={`h-full bg-gradient-to-r ${currentTheme.accent} rounded-full transition-all duration-300`}
-                          style={{ width: `${(currentPage / chapterData.total) * 100}%` }}
+                          style={{ width: `${(currentPage / (chapterData.pages?.length || 1)) * 100}%` }}
                         ></div>
                       </div>
                     </div>
@@ -526,7 +539,7 @@ export default function MangaReaderPage() {
                       </p>
                       <div className="flex flex-wrap gap-3">
                         <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${currentTheme.cardBg} ${currentTheme.text} ${currentTheme.border}`}>
-                          📖 Chapter {chapterData.chapter}
+                          📖 Chapter {chapterData.chapter?.number || chapter}
                         </span>
                         <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${currentTheme.cardBg} ${currentTheme.text} ${currentTheme.border}`}>
                           🌐 External Platform
@@ -611,16 +624,16 @@ export default function MangaReaderPage() {
               <div className="text-center mb-8 animate-fade-in">
                 <div className={`inline-block ${currentTheme.cardBg} rounded-3xl p-8 backdrop-blur-sm ${currentTheme.border} shadow-2xl`}>
                   <h2 className={`text-3xl font-bold bg-gradient-to-r ${currentTheme.accent} bg-clip-text text-transparent mb-3`}>
-                    {chapterData.title || `Chapter ${chapterData.chapter}`}
+                    {chapterData.chapter?.title || `Chapter ${chapterData.chapter?.number || chapter}`}
                   </h2>
                   <div className={`flex items-center justify-center space-x-6 ${currentTheme.textSecondary} text-lg`}>
                     <span className="flex items-center space-x-2">
                       <span>📄</span>
-                      <span>{chapterData.pages?.length || 0} pages</span>
+                      <span>{chapterData.pages?.length || chapterData.chapter?.pages || 0} pages</span>
                     </span>
                     <span className="flex items-center space-x-2">
                       <span>🌟</span>
-                      <span>{chapterData.source || 'MangaDx'}</span>
+                      <span>{chapterData.cdnReady ? 'CDN Ready' : 'MangaDx'}</span>
                     </span>
                     <span className="flex items-center space-x-2">
                       <span>📖</span>
@@ -653,16 +666,16 @@ export default function MangaReaderPage() {
                   >
                     {/* Page Number Badge */}
                     <div className={`absolute -top-4 left-6 z-10 bg-gradient-to-r ${currentTheme.accent} text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg`}>
-                      Page {page.number}
+                      Page {page.page}
                     </div>
                     
                     {/* Loading State */}
-                    {!loadedImages.has(page.number) && (
+                    {!loadedImages.has(page.page) && (
                       <div className="absolute inset-4 flex items-center justify-center bg-gray-800/90 rounded-2xl z-20 backdrop-blur-sm">
                         <div className="text-center">
                           <div className={`w-full h-96 ${currentTheme.border} rounded-xl shimmer mb-6`}></div>
                           <div className={`animate-spin rounded-full h-10 w-10 border-4 ${currentTheme.accent.includes('orange') ? 'border-orange-500' : currentTheme.accent.includes('purple') ? 'border-purple-500' : 'border-blue-500'} border-t-transparent mx-auto mb-3`}></div>
-                          <p className={`${currentTheme.text} text-lg font-medium mb-2`}>Loading page {page.number}...</p>
+                          <p className={`${currentTheme.text} text-lg font-medium mb-2`}>Loading page {page.page}...</p>
                           <div className={`w-24 h-2 ${currentTheme.border} rounded-full mx-auto shimmer`}></div>
                         </div>
                       </div>
@@ -671,17 +684,17 @@ export default function MangaReaderPage() {
                     {/* Page Image Container */}
                     <div className="relative overflow-hidden rounded-2xl">
                       <Image
-                        src={page.url}
-                        alt={`Page ${page.number}`}
-                        width={1000}
-                        height={1400}
+                        src={page.image || page.url || ''}
+                        alt={`Page ${page.page}`}
+                        width={page.width || 1000}
+                        height={page.height || 1400}
                         className={`w-full h-auto transition-all duration-700 ${
-                          loadedImages.has(page.number) 
+                          loadedImages.has(page.page) 
                             ? 'opacity-100 scale-100 blur-0' 
                             : 'opacity-0 scale-95 blur-sm'
                         }`}
-                        onLoad={() => handleImageLoad(page.number)}
-                        onError={() => handleImageLoad(page.number)}
+                        onLoad={() => handleImageLoad(page.page)}
+                        onError={() => handleImageLoad(page.page)}
                         priority={index < 2}
                         quality={95}
                       />
@@ -691,7 +704,7 @@ export default function MangaReaderPage() {
                       
                       {/* Page Info Overlay */}
                       <div className="absolute bottom-4 right-4 bg-black/70 backdrop-blur-sm text-white px-3 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-300 text-sm">
-                        {page.filename}
+                        {page.filename || `Page ${page.page}`}
                       </div>
                     </div>
 
@@ -752,10 +765,10 @@ export default function MangaReaderPage() {
                       )}
                       
                       <Image
-                        src={currentPageData.url}
+                        src={currentPageData.image || currentPageData.url || ''}
                         alt={`Page ${currentPage}`}
-                        width={800}
-                        height={1200}
+                        width={currentPageData.width || 800}
+                        height={currentPageData.height || 1200}
                         className={`w-full h-auto transition-all duration-500 ${
                           loadedImages.has(currentPage) 
                             ? 'opacity-100 scale-100' 
@@ -790,22 +803,22 @@ export default function MangaReaderPage() {
 
                       <div className="text-center">
                         <div className={`${currentTheme.text} text-sm md:text-base font-medium`}>
-                          <span className="hidden sm:inline">Page {currentPage} of {chapterData.total}</span>
-                          <span className="sm:hidden">{currentPage}/{chapterData.total}</span>
+                          <span className="hidden sm:inline">Page {currentPage} of {chapterData.pages?.length || 0}</span>
+                          <span className="sm:hidden">{currentPage}/{chapterData.pages?.length || 0}</span>
                         </div>
                         <div className={`w-20 md:w-24 h-1 ${currentTheme.border} rounded-full mt-2`}>
                           <div 
                             className={`h-full bg-gradient-to-r ${currentTheme.accent} rounded-full transition-all duration-300`}
-                            style={{ width: `${(currentPage / chapterData.total) * 100}%` }}
+                            style={{ width: `${(currentPage / (chapterData.pages?.length || 1)) * 100}%` }}
                           ></div>
                         </div>
                       </div>
 
                       <button
                         onClick={nextPage}
-                        disabled={currentPage === chapterData.total}
+                        disabled={currentPage === (chapterData.pages?.length || 0)}
                         className={`flex items-center space-x-2 px-3 py-2 md:px-4 md:py-2 rounded-xl transition-all duration-300 ${
-                          currentPage === chapterData.total
+                          currentPage === (chapterData.pages?.length || 0)
                             ? `${currentTheme.textSecondary} opacity-50 cursor-not-allowed`
                             : `${currentTheme.accent} text-white hover:scale-105 shadow-lg`
                         }`}
@@ -862,7 +875,7 @@ export default function MangaReaderPage() {
           mangaTitle={mangaTitle || `Manga ${mangaId}`}
           chapterNumber={chapter}
           currentPage={readingMode === 'single' ? currentPage : undefined}
-          totalPages={chapterData?.total}
+          totalPages={chapterData?.pages?.length || 0}
         />
       )}
     </div>

@@ -36,6 +36,7 @@ model User {
   likes            Like[]
   achievements     UserAchievement[]
   notifications    Notification[]
+  narrationRequests NarrationRequest[]
 
   @@map("users")
 }
@@ -375,4 +376,33 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notifications")
+}
+
+model NarrationRequest {
+  id               String   @id @default(cuid())
+  userId           String?  // Can be null for anonymous requests
+  mangaId          String
+  mangaTitle       String
+  chapterNumber    Int
+  chapterTitle     String?
+  voiceType        String   // narrator-male, narrator-female, etc.
+  language         String   @default("en")
+  speed            Float    @default(1.0)
+  includeDialogue  Boolean  @default(true)
+  includeNarration Boolean  @default(true)
+  status           String   @default("pending") // pending, processing, completed, failed
+  audioUrl         String?  // URL to the generated audio file
+  audioCloudinaryId String? // Cloudinary public ID for management
+  duration         Int?     // Duration in milliseconds
+  errorMessage     String?  // Error message if failed
+  jobId            String?  // Background job ID
+  progress         Int      @default(0) // 0-100%
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  completedAt      DateTime?
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("narration_requests")
 }

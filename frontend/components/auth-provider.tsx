@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { createContext, useContext, useEffect, useState } from "react"
-import { api } from "@/lib/api"
+import api from "@/lib/api"
 
 interface User {
   id: string

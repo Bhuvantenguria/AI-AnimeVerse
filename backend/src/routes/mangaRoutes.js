@@ -2,114 +2,117 @@ import axios from 'axios'
 import fs from 'fs/promises'
 import { createReadStream } from 'fs'
 import path from 'path'
-
-const BASE_URL = 'https://api.mangadex.org'
-
-// Helper function to process mangadex results to match frontend expectations
-const processmangadexResults = (mangaList) => {
-  return mangaList.map(manga => {
-    const attributes = manga.attributes
-    
-    // Find cover art relationship
-    const coverArt = manga.relationships?.find(rel => rel.type === 'cover_art')
-    const coverUrl = coverArt ? 
-      `https://uploads.mangadex.org/covers/${manga.id}/${coverArt.attributes?.fileName}` : 
-      '/placeholder.jpg'
-    
-    // Extract authors
-    const authors = manga.relationships?.filter(rel => rel.type === 'author')
-      .map(rel => ({
-        id: rel.id,
-        name: rel.attributes?.name || 'Unknown Author'
-      })) || []
-    
-    // Extract genres from tags
-    const genres = attributes.tags?.map(tag => ({
-      id: tag.id,
-      name: tag.attributes?.name?.en || Object.values(tag.attributes?.name || {})[0] || 'Unknown'
-    })) || []
-    
-    return {
-      malId: manga.id,
-      title: attributes.title?.en || Object.values(attributes.title || {})[0] || 'Unknown Title',
-      titleEnglish: attributes.title?.en,
-      titleJapanese: attributes.title?.ja,
-      coverImage: coverUrl,
-      rating: attributes.rating || null,
-      chapters: attributes.lastChapter ? parseInt(attributes.lastChapter) : null,
-      volumes: attributes.lastVolume ? parseInt(attributes.lastVolume) : null,
-      status: attributes.status || 'unknown',
-      year: attributes.year || null,
-      genres: genres,
-      synopsis: attributes.description?.en || 
-               Object.values(attributes.description || {})[0] || 
-               'No description available',
-      authors: authors.length > 0 ? authors : [{ id: 'unknown', name: 'Unknown Author' }],
-      source: 'mangadex',
-      isInReadingList: false,
-      readingStatus: undefined
-    }
-  })
-}
+import { 
+  getSelfHostedChapters, 
+  getChapterPages, 
+  getMangaDetails, 
+  searchManga, 
+  getTrendingManga 
+} from '../services/mangadex.js'
 
 export default async function mangaRoutes(fastify, options) {
-  // Get manga list (search/browse)
-  fastify.get("/", async (request, reply) => {
-    const { 
-      q: search, 
-      page = 1, 
-      limit = 20,
-      genre,
-      status,
-      year 
-    } = request.query
-
+  
+  // 🔥 NEW CDN-READY ROUTES 🔥
+  
+  // Get trending manga
+  fastify.get("/trending", async (request, reply) => {
     try {
-      const params = {
-        limit: Math.min(limit, 100),
-        offset: (page - 1) * limit,
-        order: { followedCount: 'desc', rating: 'desc' },
-        contentRating: ['safe', 'suggestive', 'erotica'],
-        includes: ['cover_art', 'author', 'artist'],
-        hasAvailableChapters: true
-      }
-
-      // Add search query if provided
-      if (search && search.trim()) {
-        params.title = search.trim()
-      }
-
-      // Add filters
-      if (status && status !== 'any') {
-        params.status = [status]
-      }
+      const page = 1
+      const limit = 20
       
-      if (year && year !== 'any') {
-        params.year = year
-      }
-
-      const response = await axios.get(`${BASE_URL}/manga`, { params })
+      // Get trending manga from our service
+      const result = await getTrendingManga({ page, limit })
       
-      if (!response.data?.data) {
-        throw new Error('Invalid response from mangadex API')
-      }
-
-      const processedData = processmangadexResults(response.data.data)
-
       return {
-        data: processedData,
+        data: result.data.map(manga => ({
+          id: manga.id,
+          title: manga.title,
+          titleEnglish: manga.title,
+          coverImage: manga.coverImage || '/placeholder.jpg',
+          rating: manga.rating || null,
+          chapters: manga.chaptersAvailable || 0,
+          status: manga.status || 'unknown',
+          year: manga.year || null,
+          genres: manga.tags || [],
+          synopsis: manga.description || 'No description available',
+          authors: manga.authors || [{ id: 'unknown', name: 'Unknown Author' }],
+          source: 'mangadex-cdn'
+        })),
         pagination: {
           current_page: parseInt(page),
-          has_next_page: response.data.offset + response.data.limit < response.data.total,
+          has_next_page: result.pagination.has_next_page,
           items: {
-            count: response.data.data.length,
-            total: response.data.total,
+            count: result.data.length,
+            total: result.pagination.total,
             per_page: parseInt(limit)
           }
         }
       }
     } catch (error) {
-      fastify.log.error("Manga route error:", error)
+      fastify.log.error("Error fetching trending manga:", error)
+      throw new Error("Failed to fetch trending manga")
+    }
+  })
+  
+  // 1️⃣ Get manga list (search/browse) - SELF-HOSTED ONLY
+  fastify.get("/", async (request, reply) => {
+    const { 
+      q: search, 
+      page = 1, 
+      limit = 20,
+      status,
+      year 
+    } = request.query
+
+    try {
+      fastify.log.info('🔍 MANGA SEARCH REQUEST:', { search, page, limit, status, year })
+      
+      let result
+      
+      if (search && search.trim()) {
+        // Search manga with self-hosted filter
+        result = await searchManga(search.trim(), { page, limit, status, year })
+      } else {
+        // Get trending manga (self-hosted only)
+        result = await getTrendingManga({ page, limit })
+      }
+
+      fastify.log.info('✅ MANGA SEARCH RESULT:', {
+        total: result.data.length,
+        page: result.pagination.current_page,
+        hasNext: result.pagination.has_next_page
+      })
+
+      return {
+        data: result.data.map(manga => ({
+          malId: manga.id,
+          title: manga.title,
+          titleEnglish: manga.title,
+          coverImage: manga.coverImage || '/placeholder.jpg',
+          rating: manga.rating || null,
+          chapters: manga.chaptersAvailable || 0,
+          status: manga.status || 'unknown',
+          year: manga.year || null,
+          genres: manga.tags || [],
+          synopsis: manga.description || 'No description available',
+          authors: manga.authors || [{ id: 'unknown', name: 'Unknown Author' }],
+          source: 'mangadex-cdn',
+          selfHostedOnly: true,
+          isInReadingList: false,
+          readingStatus: undefined
+        })),
+        pagination: {
+          current_page: parseInt(page),
+          has_next_page: result.pagination.has_next_page,
+          items: {
+            count: result.data.length,
+            total: result.pagination.total,
+            per_page: parseInt(limit)
+          }
+        }
+      }
+    } catch (error) {
+      fastify.log.error("❌ Manga route error:", error)
       return reply.code(500).send({ 
         error: "Failed to fetch manga",
         message: error.message || "An unexpected error occurred"
@@ -117,25 +120,42 @@ export default async function mangaRoutes(fastify, options) {
     }
   })
 
-  // Get manga by ID
+  // 2️⃣ Get manga by ID - WITH SELF-HOSTED CHAPTER COUNT
   fastify.get("/:id", async (request, reply) => {
     const { id } = request.params
 
     try {
-      const response = await axios.get(`${BASE_URL}/manga/${id}`, {
-        params: {
-          includes: ['cover_art', 'author', 'artist']
-        }
-      })
+      fastify.log.info('📚 MANGA DETAILS REQUEST:', { id })
       
-      if (!response.data?.data) {
-        return reply.code(404).send({ error: "Manga not found" })
-      }
+      const mangaDetails = await getMangaDetails(id)
+      
+      fastify.log.info('✅ MANGA DETAILS RESULT:', {
+        title: mangaDetails.title,
+        totalChapters: mangaDetails.totalChapters,
+        selfHostedOnly: mangaDetails.selfHostedOnly
+      })
 
-      const processedData = processmangadexResults([response.data.data])
-      return processedData[0]
+      return {
+        malId: mangaDetails.id,
+        title: mangaDetails.title,
+        titleEnglish: mangaDetails.titleEnglish,
+        titleJapanese: mangaDetails.titleJapanese,
+        coverImage: mangaDetails.coverImage || '/placeholder.jpg',
+        rating: mangaDetails.rating || null,
+        chapters: mangaDetails.totalChapters,
+        volumes: mangaDetails.lastVolume ? parseInt(mangaDetails.lastVolume) : null,
+        status: mangaDetails.status || 'unknown',
+        year: mangaDetails.year || null,
+        genres: mangaDetails.tags.map(tag => ({ id: tag, name: tag })),
+        synopsis: mangaDetails.description,
+        authors: mangaDetails.authors.map(author => ({ id: author, name: author })),
+        source: 'mangadex-cdn',
+        selfHostedOnly: true,
+        isInReadingList: false,
+        readingStatus: undefined
+      }
     } catch (error) {
-      fastify.log.error("Failed to get manga by ID:", error)
+      fastify.log.error("❌ Failed to get manga by ID:", error)
       return reply.code(500).send({ 
         error: "Failed to fetch manga details",
         message: error.message || "An unexpected error occurred"
@@ -143,690 +163,457 @@ export default async function mangaRoutes(fastify, options) {
     }
   })
 
-  // Get manga chapters
+  // 3️⃣ Get manga chapters - SELF-HOSTED ONLY
   fastify.get("/:id/chapters", async (request, reply) => {
     const { id } = request.params
-    const { page = 1, limit = 100 } = request.query // Increased default limit
-
-    console.log('📖 CHAPTERS REQUEST:')
-    console.log('  - Manga ID:', id)
-    console.log('  - Page:', page)
-    console.log('  - Limit:', limit)
+    const { page = 1, limit = 100 } = request.query
 
     try {
-      const response = await axios.get(`${BASE_URL}/chapter`, {
-        params: {
-          manga: id,
-          translatedLanguage: ['en'],
-          order: { chapter: 'asc' },
-          limit: Math.min(limit, 500), // Allow up to 500 chapters
-          offset: (page - 1) * limit,
-          includes: ['scanlation_group']
-        }
+      fastify.log.info('📖 CHAPTERS REQUEST:', { id, page, limit })
+
+      const chapters = await getSelfHostedChapters(id)
+      
+      // Simple pagination for chapters
+      const startIndex = (page - 1) * limit
+      const endIndex = startIndex + limit
+      const paginatedChapters = chapters.slice(startIndex, endIndex)
+      
+      fastify.log.info('✅ CHAPTERS RESULT:', {
+        totalChapters: chapters.length,
+        selfHostedOnly: true,
+        paginatedCount: paginatedChapters.length
       })
       
-      console.log('✅ MANGADX CHAPTERS RESPONSE:')
-      console.log('  - Status Code:', response.status)
-      console.log('  - Chapters Found:', response.data?.data?.length || 0)
-      console.log('  - Total Available:', response.data?.total || 0)
-      console.log('  - Has Next Page:', response.data.offset + response.data.limit < response.data.total)
-      
       return {
-        data: response.data.data,
+        data: paginatedChapters.map(chapter => ({
+          id: chapter.id,
+          attributes: {
+            chapter: chapter.chapter,
+            title: chapter.title,
+            volume: chapter.volume,
+            pages: chapter.pages,
+            publishAt: chapter.publishAt,
+            translatedLanguage: chapter.language,
+            externalUrl: null // Always null for self-hosted
+          }
+        })),
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
-          total: response.data.total,
-          hasNext: response.data.offset + response.data.limit < response.data.total,
+          total: chapters.length,
+          hasNext: endIndex < chapters.length,
         }
       }
     } catch (error) {
-      console.error('❌ CHAPTERS FETCH ERROR:', error.response?.data || error.message)
-      fastify.log.error("Failed to get manga chapters:", error)
-      return reply.code(500).send({ error: "Failed to fetch manga chapters" })
+      fastify.log.error("❌ Failed to get manga chapters:", error)
+      return reply.code(500).send({ 
+        error: "Failed to fetch manga chapters",
+        message: error.message || "An unexpected error occurred"
+      })
     }
   })
 
-  // Get chapter content/pages
+  // 4️⃣ Get chapter pages - DIRECT CDN URLs
+  fastify.get("/chapter/:chapterId/pages", async (request, reply) => {
+    const { chapterId } = request.params
+
+    try {
+      fastify.log.info('📄 CHAPTER PAGES REQUEST:', { chapterId })
+
+      const pagesData = await getChapterPages(chapterId)
+      
+      fastify.log.info('✅ CHAPTER PAGES RESULT:', {
+        chapterId: pagesData.chapterId,
+        totalPages: pagesData.totalPages,
+        cdnReady: true
+      })
+      
+      return {
+        chapterId: pagesData.chapterId,
+        totalPages: pagesData.totalPages,
+        pages: pagesData.pages,
+        baseUrl: pagesData.baseUrl,
+        hash: pagesData.hash,
+        cdnReady: true
+      }
+    } catch (error) {
+      fastify.log.error("❌ Failed to get chapter pages:", error)
+      return reply.code(500).send({ 
+        error: "Failed to fetch chapter pages",
+        message: error.message || "An unexpected error occurred"
+      })
+    }
+  })
+
+  // 5️⃣ Legacy support - Get chapter content/pages (old format)
   fastify.get("/:id/chapters/:chapterNumber", async (request, reply) => {
     const { id, chapterNumber } = request.params
 
-    console.log('📄 CHAPTER CONTENT REQUEST:')
-    console.log('  - Manga ID:', id)
-    console.log('  - Chapter Number:', chapterNumber)
-
     try {
-      console.log('📡 MANGADX API REQUEST (Finding Chapter):', `${BASE_URL}/chapter`)
-      console.log('   Params:', { manga: id, chapter: chapterNumber, translatedLanguage: ['en'], limit: 10 })
+      fastify.log.info('📄 LEGACY CHAPTER CONTENT REQUEST:', { id, chapterNumber })
+
+      // Get chapters to find the specific chapter
+      const chapters = await getSelfHostedChapters(id)
+      const chapter = chapters.find(ch => ch.chapter === chapterNumber)
       
-      // First, get the chapter by manga ID and chapter number
-      const chaptersResponse = await axios.get(`${BASE_URL}/chapter`, {
-        params: {
-          manga: id,
-          chapter: chapterNumber,
-          translatedLanguage: ['en'],
-          limit: 10 // Get more results to find the best match
-        }
-      })
-
-      console.log('✅ MANGADX CHAPTERS SEARCH RESPONSE:')
-      console.log('  - Status Code:', chaptersResponse.status)
-      console.log('  - Chapters Found:', chaptersResponse.data?.data?.length || 0)
-      console.log('  - All Chapters:', chaptersResponse.data?.data?.map(ch => ({
-        id: ch.id,
-        chapter: ch.attributes.chapter,
-        title: ch.attributes.title,
-        pages: ch.attributes.pages,
-        externalUrl: ch.attributes.externalUrl
-      })) || [])
-
-      if (!chaptersResponse.data?.data || chaptersResponse.data.data.length === 0) {
-        console.log('❌ No chapters found for this manga/chapter combination')
-        return reply.code(404).send({ error: 'Chapter not found' })
+      if (!chapter) {
+        return reply.code(404).send({ error: "Chapter not found or not self-hosted" })
       }
 
-      // Find the best matching chapter (prefer chapters with actual pages)
-      let chapterData = chaptersResponse.data.data.find(ch => 
-        ch.attributes.chapter === chapterNumber && ch.attributes.pages > 0
-      )
+      // Get pages for the chapter
+      const pagesData = await getChapterPages(chapter.id)
       
-      // If no chapter with pages found, take the first match
-      if (!chapterData) {
-        chapterData = chaptersResponse.data.data[0]
-      }
-
-      // Check if chapter has external URL (hosted elsewhere)
-      if (chapterData.attributes.externalUrl) {
-        return {
-          chapter: chapterNumber,
-          title: chapterData.attributes.title || `Chapter ${chapterNumber}`,
-          externalUrl: chapterData.attributes.externalUrl,
-          pages: [],
-          total: 0,
-          source: 'external',
-          message: 'This chapter is hosted on an external site. Please visit the provided URL to read it.'
-        }
-      }
-
-      // Check if chapter has pages
-      if (chapterData.attributes.pages === 0) {
-        return reply.code(404).send({ 
-          error: 'Chapter pages not available',
-          message: 'This chapter does not have readable pages on MangaDx'
-        })
-      }
-      
-      // Get the pages for this chapter
-      const pagesResponse = await axios.get(`${BASE_URL}/at-home/server/${chapterData.id}`)
-      
-      if (!pagesResponse.data) {
-        return reply.code(404).send({ error: 'Chapter pages not found' })
-      }
-
-      const baseUrl = pagesResponse.data.baseUrl
-      const chapterHash = pagesResponse.data.chapter.hash
-      const pageFilenames = pagesResponse.data.chapter.data
-
-      const pages = pageFilenames.map((filename, index) => ({
-        number: index + 1,
-        url: `${baseUrl}/data/${chapterHash}/${filename}`,
-        filename: filename
-      }))
-
-      return {
-        chapter: chapterNumber,
-        title: chapterData.attributes.title || `Chapter ${chapterNumber}`,
-        pages: pages,
-        total: pages.length,
-        source: 'mangadx'
-      }
-    } catch (error) {
-      fastify.log.error("Failed to get chapter content:", error)
-      return reply.code(500).send({ error: "Failed to fetch chapter content" })
-    }
-  })
-
-  // Get trending manga
-  fastify.get("/trending", async (request, reply) => {
-    try {
-      const response = await axios.get(`${BASE_URL}/manga`, {
-        params: {
-          limit: 20,
-          order: { followedCount: 'desc' },
-          contentRating: ['safe', 'suggestive', 'erotica'],
-          includes: ['cover_art', 'author', 'artist'],
-          hasAvailableChapters: true
-        }
-      })
-      
-      const processedData = processmangadexResults(response.data.data)
-      return {
-        data: processedData,
-        pagination: {
-          current_page: 1,
-          has_next_page: true,
-          items: {
-            count: processedData.length,
-            total: response.data.total,
-            per_page: 20
-          }
-        }
-      }
-    } catch (error) {
-      fastify.log.error("Trending manga error:", error)
-      return reply.code(500).send({ error: "Failed to fetch trending manga" })
-    }
-  })
-
-  // Get top manga (alias for trending)
-  fastify.get("/top", async (request, reply) => {
-    try {
-      const response = await axios.get(`${BASE_URL}/manga`, {
-        params: {
-          limit: 20,
-          order: { rating: 'desc' },
-          contentRating: ['safe', 'suggestive', 'erotica'],
-          includes: ['cover_art', 'author', 'artist'],
-          hasAvailableChapters: true
-        }
-      })
-      
-      const processedData = processmangadexResults(response.data.data)
-      return {
-        data: processedData,
-        pagination: {
-          current_page: 1,
-          has_next_page: true,
-          items: {
-            count: processedData.length,
-            total: response.data.total,
-            per_page: 20
-          }
-        }
-      }
-    } catch (error) {
-      fastify.log.error("Top manga error:", error)
-      return reply.code(500).send({ error: "Failed to fetch top manga" })
-    }
-  })
-
-  // Request manga narration
-  fastify.post("/:id/narrate", async (request, reply) => {
-    const { id } = request.params
-    const { 
-      chapterNumber, 
-      voiceType = 'narrator', 
-      language = 'en',
-      speed = 1.0,
-      includeDialogue = true,
-      includeNarration = true 
-    } = request.body
-
-    console.log('🔊 MANGA NARRATION REQUEST:')
-    console.log('  - Manga ID:', id)
-    console.log('  - Chapter:', chapterNumber)
-    console.log('  - Voice Type:', voiceType)
-    console.log('  - Language:', language)
-
-    try {
-      // Get manga details
-      const mangaResponse = await axios.get(`${BASE_URL}/manga/${id}`, {
-        params: {
-          includes: ['cover_art', 'author', 'artist']
-        }
-      })
-      
-      if (!mangaResponse.data?.data) {
-        return reply.code(404).send({ error: "Manga not found" })
-      }
-
-      const manga = mangaResponse.data.data
-      
-      // Get chapter content
-      const chapterResponse = await axios.get(`${BASE_URL}/chapter`, {
-        params: {
-          manga: id,
-          chapter: chapterNumber,
-          translatedLanguage: [language],
-          limit: 1
-        }
-      })
-
-      if (!chapterResponse.data?.data || chapterResponse.data.data.length === 0) {
-        return reply.code(404).send({ error: "Chapter not found" })
-      }
-
-      const chapter = chapterResponse.data.data[0]
-
-      // Create narration request
-      const narrationRequest = {
-        id: `narration_${Date.now()}`,
-        mangaId: id,
-        mangaTitle: manga.attributes.title?.en || Object.values(manga.attributes.title || {})[0],
-        chapterNumber: chapterNumber,
-        chapterTitle: chapter.attributes.title || `Chapter ${chapterNumber}`,
-        voiceType,
-        language,
-        speed,
-        includeDialogue,
-        includeNarration,
-        status: 'processing',
-        createdAt: new Date().toISOString()
-      }
-
-      // Add to narration job queue for background processing (optimized)
-      try {
-        if (fastify.queues && fastify.queues.narration) {
-          const job = await fastify.queues.narration.add('generate-narration', {
-            requestId: narrationRequest.id,
-            userId: 'anonymous', // In real app, get from auth
-            mangaId: id,
-            chapterNumber: chapterNumber,
-            voiceType,
-            language,
-            speed,
-            includeDialogue,
-            includeNarration
-          })
-          
-          console.log('✅ Narration job queued:', job.id)
-        } else {
-          console.log('⚠️ Job queue not available, will process in background')
-          
-          // Start background processing (non-blocking)
-          setImmediate(async () => {
-            try {
-              const { processNarrationJob } = await import('../../../src/jobs/narrationJob.js')
-              await processNarrationJob({
-                requestId: narrationRequest.id,
-                userId: 'anonymous',
-                mangaId: id,
-                chapterNumber: chapterNumber,
-                voiceType,
-                language,
-                speed,
-                includeDialogue,
-                includeNarration
-              }, fastify)
-            } catch (jobError) {
-              console.error('❌ Background narration processing failed:', jobError)
-            }
-          })
-        }
-      } catch (queueError) {
-        console.error('❌ Queue error, processing in background:', queueError)
-        // Fallback to immediate background processing
-        setImmediate(async () => {
-          try {
-            const { processNarrationJob } = await import('../../../src/jobs/narrationJob.js')
-            await processNarrationJob({
-              requestId: narrationRequest.id,
-              userId: 'anonymous',
-              mangaId: id,
-              chapterNumber: chapterNumber,
-              voiceType,
-              language,
-              speed,
-              includeDialogue,
-              includeNarration
-            }, fastify)
-          } catch (jobError) {
-            console.error('❌ Fallback narration processing failed:', jobError)
-          }
-        })
-      }
-      
-      return {
-        requestId: narrationRequest.id,
-        status: 'processing',
-        manga: {
-          id: manga.id,
-          title: narrationRequest.mangaTitle,
-          chapter: narrationRequest.chapterNumber,
-          chapterTitle: narrationRequest.chapterTitle
-        },
-        settings: {
-          voiceType,
-          language,
-          speed,
-          includeDialogue,
-          includeNarration
-        },
-        estimatedTime: '2-5 minutes',
-        message: 'Narration generation started. You will be notified when ready.'
-      }
-    } catch (error) {
-      console.error('❌ NARRATION REQUEST ERROR:', error)
-      fastify.log.error("Narration request error:", error)
-      return reply.code(500).send({ 
-        error: "Failed to request narration",
-        message: error.message || "An unexpected error occurred"
-      })
-    }
-  })
-
-  // Get narration status (optimized)
-  fastify.get("/narration/:requestId", async (request, reply) => {
-    const { requestId } = request.params
-
-    try {
-      console.log('📊 Checking narration status for:', requestId)
-      
-      // Comment out Redis logic if causing issues
-      // if (fastify.redis) {
-      //   const cachedStatus = await fastify.redis.get(`narration_status:${requestId}`)
-      //   if (cachedStatus) {
-      //     const statusData = JSON.parse(cachedStatus)
-      //     console.log('✅ Found cached status:', statusData.status)
-      //     return statusData
-      //   }
-      // }
-
-      // Check job queue status (simplified)
-      if (fastify.queues && fastify.queues.narration) {
-        try {
-          const job = await fastify.queues.narration.getJob(requestId)
-          if (job) {
-            const jobData = await job.getState()
-            console.log('✅ Found job status:', jobData)
-            
-            const statusMap = {
-              'waiting': 'pending',
-              'active': 'processing',
-              'completed': 'completed',
-              'failed': 'failed'
-            }
-            
-            return {
-              requestId,
-              status: statusMap[jobData] || 'unknown',
-              progress: job.progress || 0,
-              createdAt: new Date(job.timestamp).toISOString(),
-              ...(job.returnvalue || {})
-            }
-          }
-        } catch (jobError) {
-          console.warn('⚠️ Could not fetch job status:', jobError.message)
-        }
-      }
-
-      // Quick fallback status
-      console.log('📝 Using fallback status for:', requestId)
-      const mockStatus = {
-        requestId,
-        status: 'completed',
-        audioUrl: `/api/manga/audio/${requestId}`,
-        duration: 180000, // 3 minutes in ms
-        createdAt: new Date().toISOString(),
-        completedAt: new Date().toISOString(),
-        audioInfo: {
-          format: 'mp3',
-          quality: 'high',
-          bitrate: '192kbps',
-          sampleRate: '44.1kHz'
-        }
-      }
-
-      return mockStatus
-    } catch (error) {
-      fastify.log.error("Get narration status error:", error)
-      return reply.code(500).send({ error: "Failed to get narration status" })
-    }
-  })
-
-  // Serve audio files (optimized)
-  fastify.get("/audio/:requestId", async (request, reply) => {
-    const { requestId } = request.params
-
-    try {
-      console.log('🎵 Audio file requested for:', requestId)
-      
-      // Comment out Redis logic if causing issues
-      // if (fastify.redis) {
-      //   const cachedStatus = await fastify.redis.get(`narration_status:${requestId}`)
-      //   if (cachedStatus) {
-      //     const statusData = JSON.parse(cachedStatus)
-      //     if (statusData.audioUrl && statusData.audioUrl.includes('cloudinary')) {
-      //       console.log('🔗 Redirecting to Cloudinary URL')
-      //       return reply.redirect(statusData.audioUrl)
-      //     }
-      //   }
-      // }
-
-      // Check local file system first
-      const localPath = path.join(process.cwd(), 'uploads', 'narrations', `narration_${requestId}.mp3`)
-      
-      try {
-        await fs.access(localPath)
-        console.log('✅ Found local audio file')
-        
-        // Set proper headers for audio streaming
-        reply.header('Content-Type', 'audio/mpeg')
-        reply.header('Accept-Ranges', 'bytes')
-        reply.header('Cache-Control', 'public, max-age=3600') // Cache for 1 hour
-        
-        // Stream the file
-        const stream = createReadStream(localPath)
-        return reply.send(stream)
-      } catch (fileError) {
-        console.log('❌ Local file not found, generating mock audio')
-      }
-
-      // Generate mock audio response for demo
-      const mockAudioBuffer = Buffer.alloc(1024 * 10, 0x00) // 10KB silence buffer
-      reply.header('Content-Type', 'audio/mpeg')
-      reply.header('Content-Length', mockAudioBuffer.length)
-      return reply.send(mockAudioBuffer)
-      
-    } catch (error) {
-      fastify.log.error("Audio serving error:", error)
-      return reply.code(500).send({ error: "Failed to serve audio file" })
-    }
-  })
-
-  // Get available voices
-  fastify.get("/voices", async (request, reply) => {
-    try {
-      const voices = [
-        {
-          id: 'narrator-male',
-          name: 'Male Narrator',
-          type: 'narrator',
-          gender: 'male',
-          language: 'en',
-          description: 'Professional male narrator voice'
-        },
-        {
-          id: 'narrator-female',
-          name: 'Female Narrator',
-          type: 'narrator',
-          gender: 'female',
-          language: 'en',
-          description: 'Professional female narrator voice'
-        },
-        {
-          id: 'character-young-male',
-          name: 'Young Male Character',
-          type: 'character',
-          gender: 'male',
-          language: 'en',
-          description: 'Young male character voice'
-        },
-        {
-          id: 'character-young-female',
-          name: 'Young Female Character',
-          type: 'character',
-          gender: 'female',
-          language: 'en',
-          description: 'Young female character voice'
-        },
-        {
-          id: 'character-old-male',
-          name: 'Elder Male Character',
-          type: 'character',
-          gender: 'male',
-          language: 'en',
-          description: 'Wise elder male voice'
-        }
-      ]
-
-      return {
-        voices,
-        defaultVoice: 'narrator-male',
-        supportedLanguages: ['en', 'ja', 'es', 'fr', 'de']
-      }
-    } catch (error) {
-      fastify.log.error("Get voices error:", error)
-      return reply.code(500).send({ error: "Failed to get available voices" })
-    }
-  })
-
-  // Start manga chat session
-  fastify.post("/:id/chat", async (request, reply) => {
-    const { id } = request.params
-    const { chapterNumber, context } = request.body
-
-    console.log('💬 MANGA CHAT SESSION REQUEST:')
-    console.log('  - Manga ID:', id)
-    console.log('  - Chapter:', chapterNumber)
-    console.log('  - Context:', context)
-
-    try {
-      // Get manga details
-      const mangaResponse = await axios.get(`${BASE_URL}/manga/${id}`, {
-        params: {
-          includes: ['cover_art', 'author', 'artist']
-        }
-      })
-      
-      if (!mangaResponse.data?.data) {
-        return reply.code(404).send({ error: "Manga not found" })
-      }
-
-      const manga = mangaResponse.data.data
-      const mangaTitle = manga.attributes.title?.en || Object.values(manga.attributes.title || {})[0]
-
-      // Create chat session
-      const chatSession = {
-        id: `manga_chat_${Date.now()}`,
-        mangaId: id,
-        mangaTitle,
+      fastify.log.info('✅ LEGACY CHAPTER RESULT:', {
+        chapterId: chapter.id,
         chapterNumber,
-        character: {
-          id: 'manga-expert',
-          name: 'Manga Expert',
-          avatar: '/placeholder.svg?height=50&width=50',
-          description: `Expert on ${mangaTitle} - ready to explain panels, characters, and story elements!`,
-          personality: ['Knowledgeable', 'Helpful', 'Enthusiastic', 'Patient']
-        },
-        context: context || {},
-        createdAt: new Date().toISOString(),
-        welcomeMessage: `Hello! I'm here to help you understand ${mangaTitle}${chapterNumber ? ` Chapter ${chapterNumber}` : ''}. Feel free to ask me about any panels, characters, plot points, or anything else you'd like to know! 📚✨`
-      }
-
-      console.log('✅ Chat session created:', chatSession.id)
-
+        totalPages: pagesData.totalPages,
+        cdnReady: true
+      })
+      
       return {
-        sessionId: chatSession.id,
-        character: chatSession.character,
-        manga: {
-          id: manga.id,
-          title: mangaTitle,
-          chapter: chapterNumber
+        chapter: {
+          id: chapter.id,
+          number: chapter.chapter,
+          title: chapter.title,
+          pages: pagesData.totalPages
         },
-        welcomeMessage: chatSession.welcomeMessage,
-        context: chatSession.context
+        pages: pagesData.pages.map(page => ({
+          page: page.page,
+          image: page.url,
+          width: 800, // Default width
+          height: 1200 // Default height
+        })),
+        cdnReady: true,
+        selfHostedOnly: true
       }
     } catch (error) {
-      console.error('❌ CHAT SESSION ERROR:', error)
-      fastify.log.error("Chat session error:", error)
+      fastify.log.error("❌ Failed to get chapter content:", error)
       return reply.code(500).send({ 
-        error: "Failed to create chat session",
+        error: "Failed to fetch chapter content",
         message: error.message || "An unexpected error occurred"
       })
     }
   })
 
-  // Send message to manga chat
-  fastify.post("/chat/:sessionId/message", async (request, reply) => {
-    const { sessionId } = request.params
-    const { message, panelNumber, pageNumber } = request.body
-
-    console.log('💬 MANGA CHAT MESSAGE:')
-    console.log('  - Session ID:', sessionId)
-    console.log('  - Message:', message)
-    console.log('  - Panel:', panelNumber)
-    console.log('  - Page:', pageNumber)
-
+  // 6️⃣ Quick audio generation endpoint
+  fastify.post('/quick-audio', async (request, reply) => {
     try {
-      // In a real implementation, you would:
-      // 1. Validate session exists
-      // 2. Get manga context and current chapter
-      // 3. Use AI to generate contextual response
-      // 4. Store conversation history
+      const { text = "Hello! This is a quick audio test from AI AnimeVerse. Your narration system is working perfectly!" } = request.body
+
+      fastify.log.info('🚀 Quick audio generation requested')
+
+      // Generate basic audio ID
+      const audioId = `quick_${Date.now()}`
       
-      // For now, simulate AI response
-      const aiResponse = await generateMangaChatResponse(message, {
-        sessionId,
-        panelNumber,
-        pageNumber,
-        mangaId: sessionId.split('_')[2], // Extract manga ID from session ID
-        mangaTitle: 'Manga', // Would get from session data in real implementation
-        chapterNumber: sessionId.split('_')[3] // Extract chapter from session ID
-      }, fastify)
+      // Create simple audio content
+      const audioContent = `
+Welcome to AI AnimeVerse! 
+${text}
+This is a test of our audio generation system.
+Audio ID: ${audioId}
+Generated at: ${new Date().toLocaleString()}
+`
+
+      // Generate mock audio buffer (simulates audio generation)
+      const audioBuffer = Buffer.from(audioContent.repeat(100), 'utf8') // Make it bigger
+
+      // Save audio file
+      const filename = `${audioId}.mp3`
+      const uploadsDir = path.join(process.cwd(), 'uploads', 'narrations')
+      await fs.mkdir(uploadsDir, { recursive: true })
+      
+      const localFilePath = path.join(uploadsDir, filename)
+      await fs.writeFile(localFilePath, audioBuffer)
+
+      // Upload to Cloudinary if available
+      let cloudinaryUrl = null
+      if (fastify.cloudinary) {
+        try {
+          const cloudinaryResponse = await fastify.cloudinary.uploader.upload(localFilePath, {
+            resource_type: 'auto',
+            folder: 'ai-animeverse/narrations',
+            public_id: audioId,
+            overwrite: true
+          })
+          cloudinaryUrl = cloudinaryResponse.secure_url
+          fastify.log.info('✅ Audio uploaded to Cloudinary:', cloudinaryUrl)
+        } catch (cloudinaryError) {
+          fastify.log.warn('⚠️ Cloudinary upload failed:', cloudinaryError.message)
+        }
+      }
+
+      // Local URL
+      const localUrl = `/uploads/narrations/${filename}`
 
       const response = {
-        id: `msg_${Date.now()}`,
-        sessionId,
-        message: aiResponse,
-        timestamp: new Date().toISOString(),
-        type: 'assistant'
+        success: true,
+        audioId,
+        localUrl,
+        cloudinaryUrl,
+        filename,
+        size: audioBuffer.length,
+        duration: '~30 seconds',
+        generated: new Date().toISOString(),
+        message: 'Quick audio generated successfully!',
+        cdnReady: true
       }
 
+      fastify.log.info('🎉 Quick audio generated:', response)
       return response
+      
     } catch (error) {
-      console.error('❌ CHAT MESSAGE ERROR:', error)
-      fastify.log.error("Chat message error:", error)
-      return reply.code(500).send({ 
-        error: "Failed to send message",
-        message: error.message || "An unexpected error occurred"
+      fastify.log.error('❌ Quick audio generation failed:', error)
+      return reply.status(500).send({
+        error: 'Quick audio generation failed',
+        message: error.message
       })
     }
   })
-}
 
-// Helper function to generate manga chat responses
-async function generateMangaChatResponse(message, context, fastify) {
-  try {
-    // Try to use the advanced analysis service if available
-    const analysisService = await import('../../../src/services/mangaAnalysisService.js')
-    if (analysisService.default) {
-      return await analysisService.default.generateChatResponse(message, context, fastify)
+  // 7️⃣ Health check for manga service
+  fastify.get('/health', async (request, reply) => {
+    try {
+      // Test mangadex API connectivity
+      const testResponse = await axios.get('https://api.mangadex.org/manga', {
+        params: { limit: 1 }
+      })
+
+      return {
+        status: 'healthy',
+        service: 'manga-cdn-ready',
+        mangadex: testResponse.status === 200 ? 'connected' : 'disconnected',
+        features: [
+          'self-hosted-only',
+          'cdn-ready',
+          'direct-image-urls',
+          'quick-audio',
+          'ocr-narration'
+        ],
+        timestamp: new Date().toISOString()
+      }
+    } catch (error) {
+      fastify.log.error('❌ Health check failed:', error)
+      return reply.code(500).send({ 
+        status: 'unhealthy',
+        error: error.message
+      })
     }
-  } catch (error) {
-    fastify.log.warn('Advanced analysis service not available, using fallback')
-  }
-  
-  // Fallback to simple rule-based responses
-  const lowerMessage = message.toLowerCase()
-  
-  // Context-aware responses based on message content
-  if (lowerMessage.includes('panel') || lowerMessage.includes('scene')) {
-    return `I can see you're asking about a specific panel! ${context.panelNumber ? `Looking at panel ${context.panelNumber}` : 'If you can point me to which panel you mean'}, I can explain the artistic techniques, story significance, or character emotions shown. What specifically would you like to know about this scene?`
-  }
-  
-  if (lowerMessage.includes('character')) {
-    return `Character analysis is one of my favorites! I can explain character motivations, relationships, development arcs, and how they're portrayed visually in the manga. Which character are you curious about?`
-  }
-  
-  if (lowerMessage.includes('story') || lowerMessage.includes('plot')) {
-    return `Great question about the story! I can help explain plot points, foreshadowing, themes, and how this chapter fits into the larger narrative. What aspect of the story would you like me to clarify?`
-  }
-  
-  if (lowerMessage.includes('art') || lowerMessage.includes('draw')) {
-    return `The artwork in manga is so important for storytelling! I can discuss artistic techniques, panel composition, visual metaphors, and how the art style contributes to the mood and narrative. What artistic element caught your attention?`
-  }
-  
-  // General helpful response
-  return `That's an interesting question! I'm here to help you understand every aspect of this manga - from character motivations and plot developments to artistic techniques and cultural references. Could you be more specific about what you'd like to know? You can ask about specific panels, characters, story elements, or anything else! 📚✨`
+  })
+
+  // 8️⃣ OCR + TTS: Narrate chapter from manga pages
+  fastify.post('/:id/narrate-chapter', async (request, reply) => {
+    try {
+      const { id } = request.params
+      const { 
+        chapterNumber,
+        voiceType = 'narrator-male',
+        speed = 1.0,
+        includePageNumbers = true,
+        addTransitions = true,
+        userId 
+      } = request.body
+
+      if (!chapterNumber) {
+        return reply.code(400).send({ error: "Chapter number is required in request body" })
+      }
+
+      fastify.log.info('🎬 NARRATOR REQUEST:', { id, chapterNumber, voiceType, speed })
+
+      // Get chapter pages
+      const chapters = await getSelfHostedChapters(id)
+      const chapter = chapters.find(ch => ch.chapter === chapterNumber)
+      
+      if (!chapter) {
+        return reply.code(404).send({ error: "Chapter not found or not self-hosted" })
+      }
+
+      // Get manga details
+      const mangaDetails = await getMangaDetails(id)
+      
+      // Get pages for OCR
+      const pagesData = await getChapterPages(chapter.id)
+      
+      if (!pagesData.pages || pagesData.pages.length === 0) {
+        return reply.code(404).send({ error: "No pages found for this chapter" })
+      }
+
+      // Import OCR and TTS services dynamically to avoid circular dependencies
+      const { ocrService } = await import('../services/ocrService.js')
+      const { enhancedTTSService } = await import('../services/enhancedTTSService.js')
+
+      // Extract text from pages
+      fastify.log.info('📖 Starting OCR...')
+      const ocrResults = await ocrService.extractTextFromPages(pagesData.pages)
+      
+      if (!ocrResults.combinedText || ocrResults.combinedText.trim().length === 0) {
+        return reply.code(400).send({ error: "No text found in the chapter pages" })
+      }
+
+      // Generate narrative script
+      const script = ocrService.generateNarrativeScript(ocrResults, {
+        includePageNumbers,
+        addTransitions,
+        voiceType
+      })
+
+      // Generate audio
+      fastify.log.info('🎙️ Starting TTS...')
+      const ttsResult = await enhancedTTSService.generateFromOCRScript(script, {
+        voiceType,
+        speed,
+        chapterTitle: chapter.title || `Chapter ${chapterNumber}`,
+        mangaTitle: mangaDetails?.title || 'Unknown Manga'
+      })
+
+      const response = {
+        success: true,
+        audioUrl: ttsResult.audioUrl,
+        filename: ttsResult.filename,
+        metadata: {
+          mangaTitle: mangaDetails?.title || 'Unknown Manga',
+          chapterTitle: chapter.title || `Chapter ${chapterNumber}`,
+          chapterNumber,
+          totalPages: pagesData.pages.length,
+          voiceType,
+          speed,
+          duration: ttsResult.metadata.actualDuration,
+          generatedAt: ttsResult.metadata.generatedAt,
+          ocrStats: {
+            totalWords: ocrResults.totalWords,
+            averageConfidence: ocrResults.averageConfidence,
+            pagesWithText: ocrResults.pages.filter(p => p.cleanText.length > 0).length
+          }
+        },
+        ocrResults: {
+          combinedText: ocrResults.combinedText,
+          pages: ocrResults.pages.map(p => ({
+            pageNumber: p.pageNumber,
+            text: p.cleanText,
+            confidence: p.confidence
+          }))
+        }
+      }
+
+      fastify.log.info('✅ NARRATOR COMPLETE:', { audioUrl: response.audioUrl })
+      return response
+
+    } catch (error) {
+      fastify.log.error('❌ Narration failed:', error)
+      return reply.code(500).send({ 
+        error: 'Chapter narration failed',
+        message: error.message
+      })
+    }
+  })
+
+  // 9️⃣ Manga Chat - Chat with manga characters
+  fastify.post('/:id/chat', async (request, reply) => {
+    try {
+      const { id } = request.params
+      const { message, characterId, sessionId } = request.body || {}
+
+      // Make message optional for testing, provide default
+      const userMessage = message && message.trim() ? message.trim() : "Hello!"
+
+      fastify.log.info('💬 MANGA CHAT REQUEST:', { 
+        mangaId: id, 
+        message: userMessage.substring(0, 50) + '...',
+        hasBody: !!request.body 
+      })
+
+      // Try to get manga details, but don't fail if not found
+      let mangaDetails = null
+      try {
+        mangaDetails = await getMangaDetails(id)
+        fastify.log.info('✅ MANGA DETAILS FOUND:', { title: mangaDetails?.title })
+      } catch (error) {
+        fastify.log.warn('⚠️ MANGA DETAILS NOT FOUND:', error.message)
+        // Create fallback manga details
+        mangaDetails = {
+          id: id,
+          title: 'Unknown Manga',
+          coverImage: '/placeholder.jpg',
+          description: 'A mysterious manga from another dimension...'
+        }
+      }
+
+      // Available characters for chat
+      const characters = [
+        { id: 'main-character', name: 'Main Character', personality: 'friendly and helpful' },
+        { id: 'narrator', name: 'Narrator', personality: 'wise and knowledgeable' },
+        { id: 'protagonist', name: 'Protagonist', personality: 'brave and determined' },
+        { id: 'mentor', name: 'Wise Mentor', personality: 'ancient and wise' }
+      ]
+
+      const selectedCharacter = characters.find(c => c.id === characterId) || characters[0]
+
+      // Generate contextual responses based on user message
+      const generateResponse = (msg, character, manga) => {
+        const lowerMsg = msg.toLowerCase()
+        
+        if (lowerMsg.includes('hello') || lowerMsg.includes('hi') || msg === 'Hello!') {
+          return `Hello there! I'm ${character.name} from ${manga.title}. Welcome to our world! What brings you here today?`
+        }
+        
+        if (lowerMsg.includes('who are you')) {
+          return `I'm ${character.name}, a character from the manga "${manga.title}". I'm known for being ${character.personality}. What would you like to know about me?`
+        }
+        
+        if (lowerMsg.includes('story') || lowerMsg.includes('plot')) {
+          return `Ah, you want to know about our story! ${manga.title} is filled with amazing adventures. Each chapter brings new challenges and discoveries. What aspect interests you most?`
+        }
+        
+        if (lowerMsg.includes('favorite') || lowerMsg.includes('like')) {
+          return `That's a great question! As ${character.name}, I really enjoy the moments when we face challenges together. The bonds we form are what make ${manga.title} special.`
+        }
+        
+        // Default responses
+        const responses = [
+          `That's fascinating! As ${character.name} from ${manga.title}, I find your perspective interesting. Tell me more!`,
+          `In the world of ${manga.title}, we often encounter situations like this. What would you do in our place?`,
+          `You know, being ${character.personality}, I think about these things differently. What's your take on it?`,
+          `${manga.title} has taught me so much about life. Your message reminds me of our recent adventures!`,
+          `I appreciate you taking the time to chat with me! The readers of ${manga.title} always have the best insights.`
+        ]
+        
+        return responses[Math.floor(Math.random() * responses.length)]
+      }
+
+      const response = generateResponse(userMessage, selectedCharacter, mangaDetails)
+
+      const chatResponse = {
+        success: true,
+        character: selectedCharacter,
+        message: response,
+        userMessage: userMessage,
+        timestamp: new Date().toISOString(),
+        sessionId: sessionId || `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        manga: {
+          id: mangaDetails.id,
+          title: mangaDetails.title,
+          coverImage: mangaDetails.coverImage
+        },
+        availableCharacters: characters,
+        debug: {
+          mangaFound: !!mangaDetails && mangaDetails.title !== 'Unknown Manga',
+          requestBody: request.body
+        }
+      }
+
+      fastify.log.info('✅ MANGA CHAT RESPONSE:', { 
+        character: selectedCharacter.name,
+        responseLength: response.length 
+      })
+      
+      return chatResponse
+
+    } catch (error) {
+      fastify.log.error('❌ Manga chat failed:', error)
+      return reply.code(500).send({ 
+        error: 'Manga chat failed',
+        message: error.message,
+        details: 'Please check if the manga ID is valid and try again'
+      })
+    }
+  })
 }

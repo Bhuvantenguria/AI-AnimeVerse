@@ -3,8 +3,14 @@ import { Queue, Worker } from "bullmq"
 import redisClient from "../config/redisClient.js"
 
 async function jobQueuePlugin(fastify, options) {
-  if (!redisClient || redisClient.status !== "ready") {
+  if (!redisClient) {
     fastify.log.warn("⚠️ Redis not available, job queue disabled")
+    return
+  }
+  
+  // Redis client might be fallback client, that's fine
+  if (redisClient.status !== "ready" && !redisClient.store) {
+    fastify.log.warn("⚠️ Redis not ready, job queue disabled")
     return
   }
 
@@ -89,7 +95,7 @@ async function jobQueuePlugin(fastify, options) {
 
       try {
         // Import and execute narration job
-        const { processNarrationJob } = await import("../../src/jobs/narrationJob.js")
+        const { processNarrationJob } = await import("../jobs/narrationJob.js")
         
         const result = await processNarrationJob({
           requestId,

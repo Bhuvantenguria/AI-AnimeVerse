@@ -280,7 +280,7 @@ class ApiClient {
     return this.request(`/api/manga/${mangaId}/chapters/${chapterNumber}`)
   }
 
-  // Get chapter pages by chapter ID (direct MangaDx API style)
+  // Get chapter pages by chapter ID (direct mangadex API style)
   async getChapterPagesById(chapterId: string) {
     return this.request(`/api/manga/chapter/${chapterId}/pages`)
   }
@@ -382,7 +382,7 @@ class ApiClient {
     includeDialogue?: boolean;
     includeNarration?: boolean;
   } = {}) {
-    return this.request(`/api/manga/${mangaId}/narrate`, {
+    return this.request(`/api/manga/${mangaId}/narrate-chapter`, {
       method: "POST",
       body: JSON.stringify({ chapterNumber, ...options }),
     })

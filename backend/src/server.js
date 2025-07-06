@@ -29,6 +29,8 @@ import quizRoutes from "./routes/quizRoutes.js"
 import searchRoutes from "./routes/searchRoutes.js"
 import notificationRoutes from "./routes/notificationRoutes.js"
 import subscriptionRoutes from "./routes/subscriptionRoutes.js"
+import narratorRoutes from "./routes/narratorRoutes.js"
+import dashboardRoutes from "./routes/dashboardRoutes.js"
 
 const fastify = Fastify({
   logger: {
@@ -64,11 +66,11 @@ await fastify.register(jwt, {
 // Register database and logger plugins
 await fastify.register(prismaPlugin)
 await fastify.register(loggerPlugin)
-// await fastify.register(redisPlugin) // Commented out - Redis not configured
+await fastify.register(redisPlugin) // Enable Redis plugin with fallback support
 
 // Register service plugins
 await fastify.register(apiServicesPlugin)
-// await fastify.register(jobQueuePlugin) // Commented out - depends on Redis
+await fastify.register(jobQueuePlugin) // Enable job queue plugin
 await fastify.register(cloudinaryPlugin)
 
 // Register websocket plugins
@@ -90,6 +92,10 @@ await fastify.register(staticFiles, {
       res.setHeader('Content-Type', 'audio/mpeg')
       res.setHeader('Accept-Ranges', 'bytes')
       res.setHeader('Cache-Control', 'public, max-age=3600')
+      // Add CORS headers for cross-origin audio access
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS')
+      res.setHeader('Access-Control-Allow-Headers', 'Range')
     }
   }
 })
@@ -110,15 +116,31 @@ fastify.register(async function (fastify) {
   fastify.register(searchRoutes, { prefix: "/search" })
   fastify.register(notificationRoutes, { prefix: "/notifications" })
   fastify.register(subscriptionRoutes, { prefix: "/subscriptions" })
+  fastify.register(narratorRoutes, { prefix: "/narrator" })
+  fastify.register(dashboardRoutes, { prefix: "/dashboard" })
 }, { prefix: "/api" })
 
 // Health check route
 fastify.get("/health", async () => ({ status: "ok" }))
 
+// Ensure upload directories exist
+import fs from "fs/promises"
+const uploadDirs = [
+  path.join(process.cwd(), 'uploads'),
+  path.join(process.cwd(), 'uploads', 'narrations'),
+  path.join(process.cwd(), 'uploads', 'images'),
+  path.join(process.cwd(), 'uploads', 'temp')
+]
+
+for (const dir of uploadDirs) {
+  await fs.mkdir(dir, { recursive: true })
+}
+
 // Start server
   try {
   await fastify.listen({ port: config.PORT || 3001, host: "0.0.0.0" })
   fastify.log.info(`≡🚀 MangaVerse API running on port ${config.PORT || 3001}`)
+  fastify.log.info(`📁 Upload directories created`)
   } catch (err) {
     fastify.log.error(err)
     process.exit(1)

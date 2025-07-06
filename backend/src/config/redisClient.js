@@ -17,6 +17,13 @@ class FallbackRedisClient {
     return "OK"
   }
 
+  async setex(key, ttl, value) {
+    this.store.set(key, value)
+    // In a real implementation, we'd handle TTL
+    // For fallback, we just store the value
+    return "OK"
+  }
+
   async del(key) {
     this.store.delete(key)
     return 1

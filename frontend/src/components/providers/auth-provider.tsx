@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { createContext, useContext, useEffect, useState } from "react"
-import { authAPI } from "@/lib/api"
+import { userAPI, authAPI } from "@/lib/api"
 
 interface User {
   id: string
@@ -42,7 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const checkAuth = async () => {
     try {
       const response = await authAPI.getMe()
-      setUser(response.data.user)
+      setUser(response.data)
     } catch (error) {
       localStorage.removeItem("token")
     } finally {
@@ -59,7 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const register = async (email: string, username: string, password: string) => {
-    const response = await authAPI.register(email, username, password)
+    const response = await authAPI.register(email, password, username)
     const { user, token } = response.data
 
     localStorage.setItem("token", token)
