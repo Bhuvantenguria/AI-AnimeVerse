@@ -330,7 +330,7 @@ Generated at: ${new Date().toLocaleString()}
       if (fastify.cloudinary) {
         try {
           const cloudinaryResponse = await fastify.cloudinary.uploader.upload(localFilePath, {
-            resource_type: 'auto',
+            resource_type: 'video',
             folder: 'ai-animeverse/narrations',
             public_id: audioId,
             overwrite: true

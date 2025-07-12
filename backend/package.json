@@ -30,9 +30,12 @@
     "form-data": "^4.0.3",
     "ioredis": "^5.3.2",
     "jsdom": "^26.1.0",
+    "microsoft-cognitiveservices-speech-sdk": "^1.44.1",
+    "node-tesseract-ocr": "^2.2.1",
     "pino-pretty": "^10.3.1",
     "prisma": "^5.6.0",
-    "tesseract.js": "^5.1.1",
+    "say": "^0.16.0",
+    "tesseract.js": "^4.1.1",
     "uuid": "^9.0.1"
   },
   "devDependencies": {

@@ -4,7 +4,7 @@ Enhanced manga platform with AI-powered narration and chat features.
 
 ## 🚀 Features
 
-- **Manga Browsing**: Search and browse manga from MangaDx
+- **Manga Browsing**: Search and browse manga from mangadex
 - **Audio Narration**: AI-powered text-to-speech with emotional voices
 - **Smart Chat**: AI assistant for manga discussions
 - **Real-time Updates**: WebSocket support for live notifications
